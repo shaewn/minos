@@ -1,3 +1,4 @@
+#!/bin/bash
 special="-s -S"
 if [[ $1 == "ndbg" ]]; then
     special=

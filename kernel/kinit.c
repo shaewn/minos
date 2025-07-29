@@ -5,7 +5,10 @@
 #include "string.h"
 
 uintptr_t dtb_addr;
-uintptr_t kernel_image_start;
+extern char stack_top;
+
+// TODO: Load the dtb into memory after stack_top.
+#include "dtb.h"
 
 static uint64_t from_be64(uint64_t data) {
     return ktest_endian() == KLITTLE_ENDIAN ? kswap_order64(data) : data;
@@ -321,13 +324,33 @@ void print_structures(struct fdt_header *header) {
     } while (nesting);
 }
 
-void kinit(void) {
-    kputstr("Hello, world!\n");
+// TODO: Put this in arch
+uint64_t read_tcr(void) {
+    uint64_t tcr;
 
-    klockout(1);
-    kputu_nolock(dtb_addr, 16);
+    asm volatile("mrs %0, tcr_el1" : "=r" (tcr));
+    return tcr;
+}
+
+int get_page_size(void) {
+    int sizes[3] = {
+        4096,
+        65535,
+        16384
+    };
+
+    return sizes[(read_tcr() >> 14) & 3];
+}
+
+void kinit(void) {
+    kputstr("The devicetree blob begins at address 0x");
+    kputu(dtb_addr, 16);
     kputch('\n');
-    klockout(0);
+
+    int page_size = get_page_size();
+    kputstr("Hardware page size: ");
+    kputu(page_size, 10);
+    kputch('\n');
 
     struct fdt_header *header = (struct fdt_header *)dtb_addr;
 

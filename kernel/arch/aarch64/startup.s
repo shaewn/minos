@@ -1,15 +1,16 @@
+    .text
 .global _start
 .global die
 _start:
-    ldr x8, =dtb_addr
+    adrp x8, dtb_addr
+    add x8, x8, :lo12:dtb_addr
     str x0, [x8] // x0 contains the dtb address.
 
-    ldr x8, =stack_top
+    adrp x8, __stack_top
+    add x8, x8, :lo12:__stack_top
     mov sp, x8
 
     bl kinit
-spin: b spin
-
-die: b spin
+die: b die
 
 // .equ addr, 0x09000000

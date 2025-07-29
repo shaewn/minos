@@ -15,7 +15,7 @@ kernel.elf: $(OBJECTS) linker_script.ld
 	$(LD) -o $@ -T linker_script.ld $(OBJECTS)
 
 %.o: %.c
-	$(CC) -c -o $@ $<
+	$(CC) -c -ffreestanding -o $@ $<
 
 %.o: %.s
 	$(AS) -c -o $@ -mcpu=all $<

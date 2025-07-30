@@ -6,4 +6,7 @@
 #include <stdbool.h>
 #include <stdarg.h>
 
+#define _Nullable
+#define _Nonnull
+
 #endif

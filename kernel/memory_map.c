@@ -1,9 +1,11 @@
 #include "memory_map.h"
 #include "bspinlock.h"
+#include "buddy_util.h"
 #include "die.h"
 #include "dt.h"
 #include "dt_util.h"
 #include "endian.h"
+#include "macros.h"
 #include "memory.h"
 #include "output.h"
 #include "pltfrm.h"
@@ -22,58 +24,6 @@ bspinlock_t mm_lock;
         kernel_brk += size;                                                                        \
         (void *)p;                                                                                 \
     })
-
-/*
-   Structure of the memory map:
-
-   - USEFUL STRUCTURES -
-    */
-struct heap_data {
-    uint64_t addr, pages;
-
-    /* offset from the START OF THIS STRUCTURE to the START of the page array for this heap */
-    uint64_t pages_start;
-
-    /* offset from the START OF THIS STRUCTURE to the START of the buddy allocator data for this heap */
-    uint64_t buddy_start;
-};
-
-struct buddy_data {
-    uint8_t allocated;
-};
-
-struct buddy_allocator {
-    intptr_t heap_data_start;
-    bspinlock_t lock;
-    uint64_t num_orders;
-    struct buddy_order {
-        uint64_t size;
-        uintptr_t offset;
-    } orders[];
-};
-
-/*
-   at the beginning of the memory map,
-   there is an array of struct heap_data,
-   terminated by a fully zeroed out struct heap_data.
-
-   each heap_data specifies a different contiguous physical address range (as provided by the DTB)
-
-   next is several arrays of struct page.
-   there is no terminator between the arrays.
-   there is one array per heap.
-   the heap stores the offset (in bytes) from the beginning of the heap_data structure to the beginning of its page array
-
-   next is an array of pairs of struct buddy_allocator and struct buddy_data.
-   the heap_data structure stores the offset (in bytes) from the beginning of the heap_data structure to the beginning of its buddy allocator
-   the struct buddy_allocator contains a NULL terminated array of offsets from the beginning of the struct buddy_allocator to the first struct buddy_data in each order.
-
-   next is a contiguous region of struct buddy_data's
-   there are no terminators between buddy_data's for each order.
-
-   WARNING: Make sure once you actually do the buddy allocation stuff, that you mark ALL OF THE MEMORY THAT WE'VE USED IN THE KERNEL SO FAR as allocated.
-
-   */
 
 void create_memory_map(void) {
     struct dt_node *root = dt_search(NULL, "/");
@@ -166,7 +116,9 @@ void create_memory_map(void) {
         clear_memory(alloc, sizeof(*alloc));
         data_ptr += sizeof(*alloc);
 
-        alloc->heap_data_start = (intptr_t) heap_data_start - (intptr_t) alloc;
+        cur->buddy_start = (uintptr_t)alloc - (uintptr_t)cur;
+
+        alloc->heap_data_offset = (intptr_t)cur - (intptr_t)alloc;
 
         while (blocks_per_order) {
             data_ptr += sizeof(*alloc->orders);
@@ -178,8 +130,9 @@ void create_memory_map(void) {
         blocks_per_order = cur->pages;
 
         while (blocks_per_order) {
-            alloc->orders[order].size = blocks_per_order;
-            alloc->orders[order].offset = (uintptr_t) data_ptr - (uintptr_t) alloc;
+            struct buddy_order *buddy_order = alloc->orders + order;
+            buddy_order->num_blocks = blocks_per_order;
+            buddy_order->data_offset = (uintptr_t)data_ptr - (uintptr_t)buddy_order;
 
             size_t increment = blocks_per_order * sizeof(struct buddy_data);
             clear_memory(data_ptr, increment);
@@ -190,13 +143,13 @@ void create_memory_map(void) {
         }
 
         // Align to eight bytes.
-        uintptr_t dpint = (uintptr_t) data_ptr;
+        uintptr_t dpint = (uintptr_t)data_ptr;
         dpint = (dpint + 7) & ~(uintptr_t)7;
         data_ptr = (char *)dpint;
         ++cur;
     }
 
-    uintptr_t dpint = (uintptr_t) data_ptr;
+    uintptr_t dpint = (uintptr_t)data_ptr;
     // align to page size.
     dpint = (dpint + page_size - 1) & ~(uintptr_t)(page_size - 1);
 
@@ -204,27 +157,353 @@ void create_memory_map(void) {
     memory_map_end = data_ptr;
     kernel_brk = data_ptr;
 
-    void dump_memory_map(void);
-    dump_memory_map();
+    void reserve_active_kernel_memory(void);
+    reserve_active_kernel_memory();
+
+    void dump_memory_map(uint64_t min_order, uint64_t max_order);
+    dump_memory_map(6, 20);
 }
 
-void dump_memory_map(void) {
+void dump_memory_map(uint64_t min_order, uint64_t max_order) {
     for (struct heap_data *heap = (struct heap_data *)memory_map_start; heap->pages; heap++) {
         kprint("Heap at 0x%lx has %lu pages.\n", heap->addr, heap->pages);
+        void dump_allocated_blocks(struct heap_data * heap, uint64_t order);
 
-        kprint("First ten pages:\n");
+        struct buddy_allocator *alloc = HEAP_GET_BUDDY(heap);
 
-        struct page *first_page = (struct page *)((char *)heap + heap->pages_start);
-
-        for (uint64_t i = 0; i < heap->pages && i < 10; i++) {
-            struct page *page = first_page + i;
-            kprint("Page at 0x%lx is page %lu in heap %lu %s\n", page->addr, page->page_index, page->heap_index, page->allocated ? "allocated" : "free");
-        }
-
-        struct buddy_allocator *allocator = (struct buddy_allocator *) ((char *)heap + heap->buddy_start);
-        for (uint64_t i = 0; i < allocator->num_orders; i++) {
-            struct buddy_order *order = allocator->orders + i;
-            kprint("Order %lu has %lu buddy blocks and starts at 0x%lx\n", order->size, (uintptr_t) allocator + order->offset);
+        for (uint64_t order = min_order; order < alloc->num_orders && order <= max_order; order++) {
+            kputstr("\n");
+            dump_allocated_blocks(heap, order);
+            kputstr("\n");
         }
     }
+}
+
+/* pre: a_end != a_start && b_end != b_start */
+int ranges_overlap(uintptr_t a_start, uintptr_t a_end, uintptr_t b_start, uintptr_t b_end) {
+    return (a_start < b_end) && (b_start < a_end);
+    /*
+       For some reason this really tripped me up at first:
+       initially, we can divide analysis into two cases: overlapping and non-overlapping.
+       consider the overlapping case:
+
+       if a is the lower region (i.e., lower base address), and b is the upper region,
+
+       we know a_start <= b_start, a_start < a_end, b_start < b_end.
+       hence, a_start < b_end.
+
+       if a_end <= b_start, then these regions wouldn't be overlapping, so !(a_end <= b_start), or
+       b_start < a_end. hence, a_start < b_end && b_start < a_end.
+
+       so the function returns true.
+
+       swapping the lower and upper regions is a symmetric case.
+
+       consider the non-overlapping case.
+
+       if a is the lower region, and b is the upper region,
+       we know a_start <= b_start, a_start < a_end, b_start < b_end.
+
+       so a_start < b_end.
+
+       now, suppose b_start < a_end.
+       the regions would then be overlapping, so it must be the case that !(b_start < a_end).
+
+       so the function returns false.
+
+       swapping the lower and upper regions is a symmetric case.
+
+       Now, since overlapping input -> returns true and non-overlapping input -> returns false,
+       we know the function works.
+
+       */
+}
+
+void trickle_up_allocate_pages(struct buddy_allocator *alloc, uint64_t page_first,
+                               uint64_t page_past_last);
+
+void reserve_active_kernel_memory(void) {
+    uintptr_t kmem_start, kmem_end;
+    extern char __kernel_start;
+    kmem_start = (uintptr_t)&__kernel_start;
+    kmem_end = (uintptr_t)kernel_brk;
+
+    uint32_t page_size = gethwpagesize();
+
+    if (kmem_start & (page_size - 1) || kmem_end & (page_size - 1)) {
+        KFATAL("kmem_start or kmem_end is not page aligned (0x%lx and 0x%lx, respectively)\n",
+               kmem_start, kmem_end);
+    }
+
+    kprint("Pre-allocation kernel memory footprint: 0x%lx-0x%lx\n", kmem_start, kmem_end);
+
+    for (struct heap_data *heap = (struct heap_data *)memory_map_start; heap->pages; heap++) {
+        uintptr_t heap_start, heap_end;
+        heap_start = heap->addr;
+        heap_end = heap->addr + heap->pages * page_size;
+
+        if (heap_start == 0) {
+            // Reserve one page so that we can pretend NULL pointers are invalid even in physical
+            // address space.
+
+            trickle_up_allocate_pages(HEAP_GET_BUDDY(heap), 0, 1);
+            kprint("Allocating page 0x%lx-0x%lx for NULL pointer protection.\n", heap_start, heap_start + page_size);
+        } else if (ranges_overlap(kmem_start, kmem_end, heap_start, heap_end)) {
+            // Go through all overlapping pages and mark them as allocated.
+            uintptr_t overlap_start, overlap_end;
+            overlap_start = KMAX(kmem_start, heap_start);
+            overlap_end = KMIN(kmem_end, heap_end);
+
+            uint64_t page_first, page_past_last;
+
+            page_first = (overlap_start - heap_start) / page_size;
+            page_past_last = (overlap_end - heap_start) / page_size;
+
+            struct buddy_allocator *alloc = HEAP_GET_BUDDY(heap);
+            trickle_up_allocate_pages(alloc, page_first, page_past_last);
+        }
+    }
+}
+
+void dump_allocated_blocks(struct heap_data *heap, uint64_t order) {
+    struct buddy_allocator *alloc = (struct buddy_allocator *)((char *)heap + heap->buddy_start);
+
+    struct buddy_order *buddy_order = alloc->orders + order;
+    struct buddy_data *data_start =
+        (struct buddy_data *)((char *)buddy_order + buddy_order->data_offset);
+    struct page *heap_first_page = HEAP_FIRST_PAGE(heap);
+
+    uint32_t page_size = gethwpagesize();
+
+    for (uint64_t i = 0; i < buddy_order->num_blocks; i++) {
+        struct buddy_data *data = data_start + i;
+        if (data->allocated) {
+            struct page *page_first, *page_last;
+            uintptr_t first_addr, last_addr;
+
+            page_first = heap_first_page + get_first_page(order, i);
+            page_last = page_first + get_num_pages(order) - 1;
+            first_addr = page_first->addr;
+            last_addr = page_last->addr + page_size;
+            kprint("Block %lu on order %lu is allocated (0x%lx-0x%lx)\n", i, order, first_addr,
+                   last_addr);
+        }
+    }
+}
+
+void trickle_up_range_allocate(struct buddy_allocator *alloc, uint64_t order, uint64_t block_first,
+                               uint64_t block_past_last);
+
+/* allocate all of these pages and trickle up the allocations in the buddy tree. */
+/* WARNING: Non-locking */
+void trickle_up_allocate_pages(struct buddy_allocator *alloc, uint64_t page_first,
+                               uint64_t page_past_last) {
+    struct heap_data *heap = BUDDY_GET_HEAP(alloc);
+    struct page *heap_first_page = HEAP_FIRST_PAGE(heap);
+    struct page *first_page, *one_past_last_page;
+    first_page = heap_first_page + page_first;
+    one_past_last_page = heap_first_page + page_past_last;
+
+    uint64_t num_pages = page_past_last - page_first;
+
+    for (struct page *page = first_page; page != one_past_last_page; page++) {
+        page->allocated = 1;
+    }
+
+    trickle_up_range_allocate(alloc, 0, page_first, page_past_last);
+}
+
+/* WARNING: Non-locking */
+// NOTE: Trickle up does not set any values in the underlying pages.
+void trickle_up_range_allocate(struct buddy_allocator *alloc, uint64_t bottom_order,
+                               uint64_t block_first, uint64_t block_past_last) {
+    uint64_t current_order = bottom_order;
+
+    uint64_t num_blocks = block_past_last - block_first;
+    uint64_t first_block = block_first;
+
+    while (current_order < alloc->num_orders) {
+        struct buddy_order *buddy_order = alloc->orders + current_order;
+        struct buddy_data *data_first = BUDDY_ORDER_GET_DATA(buddy_order);
+
+        for (uint64_t block = 0; block < num_blocks; block++) {
+            struct buddy_data *data = data_first + (first_block + block);
+            data->allocated = 1;
+        }
+
+        current_order++;
+        first_block >>= 1;
+
+        // If we have an odd number, we have to allocate the odd-one-out's buddy as well.
+        num_blocks = (num_blocks + 1) >> 1;
+    }
+}
+
+/* WARNING: Non-locking */
+/* allocating - 1 or 0 depending on whether we're freeing or allocating */
+void trickle_down_range(struct buddy_allocator *alloc, uint64_t top_order, uint64_t block_first,
+                        uint64_t block_past_last, int allocating) {
+    uint64_t order_counter = top_order + 1;
+
+    uint64_t num_blocks = block_past_last - block_first;
+    uint64_t first_block = block_first;
+
+    uint64_t num_pages, first_page;
+
+    if (allocating != 0 && allocating != 1) {
+        KFATAL("Weird allocating value %d\n", allocating);
+    }
+
+    while (order_counter != 0) {
+        uint64_t current_order = order_counter - 1;
+
+        struct buddy_order *buddy_order = alloc->orders + current_order;
+        struct buddy_data *data_first = BUDDY_ORDER_GET_DATA(buddy_order);
+
+        for (uint64_t block = 0; block < num_blocks; block++) {
+            struct buddy_data *data = data_first + (first_block + block);
+            data->allocated = allocating;
+        }
+
+        num_pages = num_blocks;
+        first_page = first_block;
+
+        num_blocks <<= 1;
+        first_block <<= 1;
+
+        order_counter--;
+    }
+
+    struct heap_data *heap = BUDDY_GET_HEAP(alloc);
+    struct page *heap_first_page = HEAP_FIRST_PAGE(heap);
+
+    for (uint64_t page = 0; page < num_pages; page++) {
+        struct page *cur_page = heap_first_page + first_page + page;
+
+        if (allocating) {
+            cur_page->allocated = top_order + 1;
+        } else {
+            cur_page->allocated = 0;
+        }
+    }
+}
+
+/* allocate contiguous physical memory region of order 'order'. the range allocated is
+ * [*region_start, *region_end) */
+int acquire_block(struct buddy_allocator *alloc, uint64_t order, uintptr_t *region_start,
+                  uintptr_t *region_end) {
+    uint32_t page_size = gethwpagesize();
+
+    struct buddy_order *buddy_order = alloc->orders + order;
+
+    if (!region_start) {
+        KFATAL("region_start must not be NULL\n");
+    }
+
+    bspinlock_lock(&alloc->lock);
+
+    struct buddy_data *data_first = BUDDY_ORDER_GET_DATA(buddy_order);
+    struct buddy_data *choice = NULL;
+
+    // block index of the choice
+    uint64_t choice_index = 0;
+    while (!choice && choice_index < buddy_order->num_blocks) {
+        struct buddy_data *data = data_first + choice_index;
+
+        if (!data->allocated) {
+            choice = data;
+        } else {
+            choice_index++;
+        }
+    }
+
+    int retval = -1;
+
+    if (choice) {
+        trickle_down_range(alloc, order, choice_index, choice_index + 1, 1);
+        trickle_up_range_allocate(alloc, order, choice_index, choice_index + 1);
+        retval = 0;
+
+        uint64_t page_size = gethwpagesize();
+        uint64_t first_page = get_first_page(order, choice_index);
+        uint64_t num_pages = get_num_pages(order);
+
+        struct heap_data *heap = BUDDY_GET_HEAP(alloc);
+
+        *region_start = heap->addr + first_page * page_size;
+
+        if (region_end) {
+            *region_end = *region_start + num_pages * page_size;
+        }
+    }
+
+    bspinlock_unlock(&alloc->lock);
+
+    return retval;
+}
+
+void release_upward(struct buddy_allocator *alloc, uint64_t bottom_order, uint64_t block_index) {
+    uint64_t me = block_index;
+    uint64_t order = bottom_order;
+
+    int done = 0;
+
+    while (!done && order < alloc->num_orders) {
+        uint64_t buddy = get_buddy(me);
+
+        struct buddy_order *buddy_order = alloc->orders + order;
+        struct buddy_data *data_first = BUDDY_ORDER_GET_DATA(buddy_order);
+        struct buddy_data *me_data, *buddy_data;
+
+        me_data = data_first + me;
+        buddy_data = data_first + buddy;
+
+        me_data->allocated = 0;
+
+        if (buddy_data->allocated) {
+            done = 1;
+        }
+
+        order++;
+        me >>= 1;
+    }
+}
+
+void release_block(struct buddy_allocator *alloc, uintptr_t region_start) {
+    uint32_t page_size = gethwpagesize();
+
+    struct heap_data *heap = BUDDY_GET_HEAP(alloc);
+
+    if (region_start < heap->addr) {
+        KFATAL("Page 0x%lx-0x%lx does not lie within heap the specified heap\n", region_start,
+               region_start + page_size);
+    }
+
+    uintptr_t heap_offset = region_start - heap->addr;
+    uint64_t first_page_index = heap_offset / page_size;
+
+    if (first_page_index >= heap->pages) {
+        KFATAL("Page 0x%lx-0x%lx does not lie within heap the specified heap\n", region_start,
+               region_start + page_size);
+    }
+
+    struct page *page = HEAP_FIRST_PAGE(heap) + first_page_index;
+
+    bspinlock_lock(&alloc->lock);
+
+    if (!page->allocated) {
+        KFATAL("Attempt to free non-allocated page 0x%lx-0x%lx\n", region_start,
+               region_start + page_size);
+    }
+
+    uint64_t order = page->allocated - 1;
+
+    struct buddy_order *buddy_order = alloc->orders + order;
+
+    uint64_t block_index = get_block_index(order, first_page_index);
+
+    trickle_down_range(alloc, order, block_index, block_index + 1, 0);
+    release_upward(alloc, order, block_index);
+
+    bspinlock_unlock(&alloc->lock);
 }

@@ -63,4 +63,7 @@ void kinit(void) {
 
     kprint("Found cpus node: %s\n", cpus_node->name);
     create_memory_map();
+
+    void test_memory(void);
+    test_memory();
 }

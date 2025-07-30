@@ -6,6 +6,7 @@
 #include "string.h"
 
 extern char *kernel_brk;
+struct dt_node *dt_root;
 
 #define ALLOC(size)                                                                                \
     ({                                                                                             \
@@ -14,7 +15,7 @@ extern char *kernel_brk;
         (void *)p;                                                                                 \
     })
 
-struct dt_node *build_dt(struct fdt_header *header) {
+void build_dt(struct fdt_header *header) {
     char *begin_structs = (char *)header + from_be32(header->off_dt_struct);
     char *begin_strings = (char *)header + from_be32(header->off_dt_strings);
     int nesting = 0;
@@ -22,7 +23,6 @@ struct dt_node *build_dt(struct fdt_header *header) {
     uint32_t *wp = (uint32_t *)begin_structs;
 
     struct dt_node *current_node = NULL;
-    struct dt_node *root_node = NULL;
 
     do {
         switch (from_be32(*wp++)) {
@@ -44,7 +44,7 @@ struct dt_node *build_dt(struct fdt_header *header) {
 
                     node->parent->last_child = node;
                 } else {
-                    root_node = node;
+                    dt_root = node;
                 }
 
                 current_node = node;
@@ -95,8 +95,6 @@ struct dt_node *build_dt(struct fdt_header *header) {
             }
         }
     } while (nesting);
-
-    return root_node;
 }
 
 static void print_spacing(int amount) {
@@ -106,6 +104,10 @@ static void print_spacing(int amount) {
 }
 
 void print_dt(struct dt_node *root, int current_depth) {
+    if (!root) {
+        root = dt_root;
+    }
+
     print_spacing(current_depth);
     kprint("DTB node %s:\n", root->name);
 
@@ -123,4 +125,64 @@ void print_dt(struct dt_node *root, int current_depth) {
     for (struct dt_node *child = root->first_child; child; child = child->next_sibling) {
         print_dt(child, current_depth + 1);
     }
+}
+
+struct dt_node *dt_search(struct dt_node *start, const char *path) {
+    if (!path) {
+        KFATAL("ERROR: path is a NULL pointer\n");
+    }
+
+    struct dt_node *current = start;
+
+    if (*path == '/') {
+        current = dt_root;
+        while (*path == '/') ++path;
+    } else if (!start) {
+        KFATAL("ERROR: start is a NULL pointer and the path is relative\n");
+    }
+
+    char buf[256];
+
+    const char *p = path, *s = path;
+
+    while (*s) {
+        while (*s && *s != '/') ++s;
+
+        size_t len = s - p;
+        copy_memory(buf, p, len);
+        buf[len] = 0;
+
+        struct dt_node *child = dt_find(current, buf);
+        if (!child) {
+            return NULL;
+        }
+
+        while (*s == '/') ++s;
+
+        p = s;
+        current = child;
+    }
+
+    return current;
+}
+
+struct dt_node *dt_find(struct dt_node *parent, const char *name) {
+    struct dt_node *start = parent ? parent : dt_root;
+    for (struct dt_node *child = start->first_child; child; child = child->next_sibling) {
+        if (string_compare(child->name, name) == 0) {
+            return child;
+        }
+    }
+
+    return NULL;
+}
+
+struct dt_prop *dt_findprop(struct dt_node *parent, const char *propname) {
+    for (struct dt_prop *prop = parent->first_prop; prop; prop = prop->next) {
+        if (string_compare(prop->name, propname) == 0) {
+            return prop;
+        }
+    }
+
+    return NULL;
 }

@@ -1,16 +1,18 @@
+#include "die.h"
 #include "endian.h"
 #include "fdt.h"
 #include "output.h"
 #include "dt.h"
+#include "memory_map.h"
+#include "pltfrm.h"
+#include "string.h"
 
 char *dtb_addr;
 
-extern char __stack_top;
+extern char __init_heap_begin;
 
 // Used for early allocations (before initialization of secondary cpus)
-char *kernel_brk = &__stack_top;
-
-struct dt_node *dt_root;
+char *kernel_brk = &__init_heap_begin;
 
 void print_reserved_regions(struct fdt_header *header) {
     uint32_t offset = from_be32(header->off_mem_rsvmap);
@@ -32,30 +34,12 @@ void print_reserved_regions(struct fdt_header *header) {
     }
 }
 
-// TODO: Put this in arch
-uint64_t read_tcr(void) {
-    uint64_t tcr;
-
-    asm volatile("mrs %0, tcr_el1" : "=r" (tcr));
-    return tcr;
-}
-
-int get_page_size(void) {
-    int sizes[3] = {
-        4096,
-        65535,
-        16384
-    };
-
-    return sizes[(read_tcr() >> 14) & 3];
-}
-
 void kinit(void) {
     // va_list used in kprint needs access to registers q0-q7
     init_print();
     kprint("The devicetree blob begins at address 0x%lx.\n", dtb_addr);
 
-    kprint("Hardware page size: %d bytes.\n", get_page_size());
+    kprint("Hardware page size: %u bytes.\n", gethwpagesize());
 
     struct fdt_header *header = (struct fdt_header *)dtb_addr;
 
@@ -70,6 +54,13 @@ void kinit(void) {
     kprint("We are %s endian.\n", ktest_endian() == KLITTLE_ENDIAN ? "little" : "big");
 
     print_reserved_regions(header);
-    dt_root = build_dt(header);
-    print_dt(dt_root, 0);
+    build_dt(header);
+
+    struct dt_node *cpus_node = dt_search(NULL, "/cpus");
+    if (!cpus_node) {
+        KFATAL("Couldn't find /cpus in device tree\n");
+    }
+
+    kprint("Found cpus node: %s\n", cpus_node->name);
+    create_memory_map();
 }

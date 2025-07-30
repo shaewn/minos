@@ -15,7 +15,11 @@ struct dt_node {
     struct dt_prop *first_prop, *last_prop;
 };
 
-struct dt_node *build_dt(struct fdt_header *header);
+void build_dt(struct fdt_header *header);
 void print_dt(struct dt_node *root, int current_depth);
+
+struct dt_node *dt_search(struct dt_node *start, const char *path);
+struct dt_node *dt_find(struct dt_node *parent, const char *name);
+struct dt_prop *dt_findprop(struct dt_node *parent, const char *propname);
 
 #endif

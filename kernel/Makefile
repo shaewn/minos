@@ -4,7 +4,7 @@ AS := aarch64-linux-gnu-as
 AFLAGS := -g
 
 CC := aarch64-linux-gnu-gcc
-CFLAGS := -ffreestanding -fpic -g
+CFLAGS := -ffreestanding -g
 
 C_SOURCES := $(shell find -path ./tests -prune -o -name "**.c" -print)
 ASM_SOURCES := $(shell find arch/aarch64 -name "**.s" )

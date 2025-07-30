@@ -23,3 +23,11 @@ uint32_t kswap_order32(uint64_t in) {
 
     return result;
 }
+
+uint64_t from_be64(uint64_t data) {
+    return ktest_endian() == KLITTLE_ENDIAN ? kswap_order64(data) : data;
+}
+
+uint32_t from_be32(uint32_t data) {
+    return ktest_endian() == KLITTLE_ENDIAN ? kswap_order32(data) : data;
+}

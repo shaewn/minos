@@ -45,7 +45,11 @@ struct buddy_data {
 struct buddy_allocator {
     intptr_t heap_data_start;
     bspinlock_t lock;
-    uintptr_t orders[];
+    uint64_t num_orders;
+    struct buddy_order {
+        uint64_t size;
+        uintptr_t offset;
+    } orders[];
 };
 
 /*
@@ -65,7 +69,7 @@ struct buddy_allocator {
    the struct buddy_allocator contains a NULL terminated array of offsets from the beginning of the struct buddy_allocator to the first struct buddy_data in each order.
 
    next is a contiguous region of struct buddy_data's
-   at the end of each order there is a struct buddy_data with all bytes set to 0xff
+   there are no terminators between buddy_data's for each order.
 
    WARNING: Make sure once you actually do the buddy allocation stuff, that you mark ALL OF THE MEMORY THAT WE'VE USED IN THE KERNEL SO FAR as allocated.
 
@@ -156,7 +160,6 @@ void create_memory_map(void) {
     char *data_ptr = (char *)current_page_item;
 
     while (cur->pages) {
-        uint64_t order = 0;
         uint64_t blocks_per_order = cur->pages;
 
         struct buddy_allocator *alloc = (struct buddy_allocator *)data_ptr;
@@ -167,15 +170,16 @@ void create_memory_map(void) {
 
         while (blocks_per_order) {
             data_ptr += sizeof(*alloc->orders);
-            order++;
+            alloc->num_orders++;
             blocks_per_order >>= 1;
         }
 
-        order = 0;
+        uint64_t order = 0;
         blocks_per_order = cur->pages;
 
         while (blocks_per_order) {
-            alloc->orders[order] = (uintptr_t) data_ptr - (uintptr_t) alloc;
+            alloc->orders[order].size = blocks_per_order;
+            alloc->orders[order].offset = (uintptr_t) data_ptr - (uintptr_t) alloc;
 
             size_t increment = blocks_per_order * sizeof(struct buddy_data);
             clear_memory(data_ptr, increment);
@@ -218,5 +222,9 @@ void dump_memory_map(void) {
         }
 
         struct buddy_allocator *allocator = (struct buddy_allocator *) ((char *)heap + heap->buddy_start);
+        for (uint64_t i = 0; i < allocator->num_orders; i++) {
+            struct buddy_order *order = allocator->orders + i;
+            kprint("Order %lu has %lu buddy blocks and starts at 0x%lx\n", order->size, (uintptr_t) allocator + order->offset);
+        }
     }
 }

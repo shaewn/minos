@@ -1,19 +1,37 @@
-#include "dt.h"
-#include "die.h"
+#include "./dt.h"
 #include "endian.h"
-#include "memory.h"
-#include "output.h"
-#include "string.h"
 
-extern char *kernel_brk;
 struct dt_node *dt_root;
+extern uintptr_t kernel_brk;
+
+#define KFATAL(...) early_die()
+
+extern void early_die(void);
 
 #define ALLOC(size)                                                                                \
     ({                                                                                             \
-        char *p = kernel_brk;                                                                      \
+        char *p = (char *)kernel_brk;                                                              \
         kernel_brk += size;                                                                        \
         (void *)p;                                                                                 \
     })
+
+static void clear_memory(void *dst, size_t size) {
+    char *s = dst;
+    for (size_t i = 0; i < size; i++) {
+        s[i] = 0;
+    }
+}
+
+static size_t string_len(const char *s) {
+    size_t size = 0;
+    while (*s++) size++;
+    return size;
+}
+
+static int string_compare(const char *a, const char *b) {
+    while (*a && *a == *b) ++a, ++b;
+    return *a - *b;
+}
 
 void build_dt(struct fdt_header *header) {
     char *begin_structs = (char *)header + from_be32(header->off_dt_struct);
@@ -97,36 +115,6 @@ void build_dt(struct fdt_header *header) {
     } while (nesting);
 }
 
-static void print_spacing(int amount) {
-    for (int i = 0; i < amount; i++) {
-        kputstr("  ");
-    }
-}
-
-void print_dt(struct dt_node *root, int current_depth) {
-    if (!root) {
-        root = dt_root;
-    }
-
-    print_spacing(current_depth);
-    kprint("DTB node %s:\n", root->name);
-
-    for (struct dt_prop *prop = root->first_prop; prop; prop = prop->next) {
-        print_spacing(current_depth);
-        kprint("Property %s of length %u has bytes:", prop->name, prop->data_length);
-
-        for (int i = 0; i < prop->data_length; i++) {
-            kprint(" 0x%x", prop->data[i]);
-        }
-
-        kputch('\n');
-    }
-
-    for (struct dt_node *child = root->first_child; child; child = child->next_sibling) {
-        print_dt(child, current_depth + 1);
-    }
-}
-
 struct dt_node *dt_search(struct dt_node *start, const char *path) {
     if (!path) {
         KFATAL("ERROR: path is a NULL pointer\n");
@@ -136,7 +124,8 @@ struct dt_node *dt_search(struct dt_node *start, const char *path) {
 
     if (*path == '/') {
         current = dt_root;
-        while (*path == '/') ++path;
+        while (*path == '/')
+            ++path;
     } else if (!start) {
         KFATAL("ERROR: start is a NULL pointer and the path is relative\n");
     }
@@ -146,10 +135,11 @@ struct dt_node *dt_search(struct dt_node *start, const char *path) {
     const char *p = path, *s = path;
 
     while (*s) {
-        while (*s && *s != '/') ++s;
+        while (*s && *s != '/')
+            ++s;
 
-        size_t len = s - p;
-        copy_memory(buf, p, len);
+        size_t len = 0;
+        while (p != s) buf[len++] = *p, ++p, ++s;
         buf[len] = 0;
 
         struct dt_node *child = dt_find(current, buf);
@@ -157,7 +147,8 @@ struct dt_node *dt_search(struct dt_node *start, const char *path) {
             return NULL;
         }
 
-        while (*s == '/') ++s;
+        while (*s == '/')
+            ++s;
 
         p = s;
         current = child;
@@ -179,7 +170,12 @@ struct dt_node *dt_find(struct dt_node *parent, const char *name) {
 
 struct dt_prop *dt_findprop(struct dt_node *parent, const char *propname) {
     for (struct dt_prop *prop = parent->first_prop; prop; prop = prop->next) {
-        if (string_compare(prop->name, propname) == 0) {
+        const char *a, *b;
+        a = prop->name;
+        b = propname;
+        while (*a && *a == *b) ++a, ++b;
+
+        if (*a == *b) {
             return prop;
         }
     }

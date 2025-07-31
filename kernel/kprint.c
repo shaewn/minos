@@ -74,11 +74,11 @@ copy_over:;
     return len;
 }
 
-void kprintv_nolock(const char *format, va_list list) {
+void kprintv_to_buffer(char *buffer, size_t max, const char *format, va_list list) {
     size_t buffer_pos = 0;
     const char *s = format;
     // Save one for null terminator.
-    char *one_past_last = kprint_buffer + KPRINT_BUFFER_SIZE - 1;
+    char *one_past_last = buffer + max - 1;
 
     while (*s) {
         switch (*s) {
@@ -86,7 +86,7 @@ void kprintv_nolock(const char *format, va_list list) {
                 ++s;
                 switch (*s++) {
                     case 'x': {
-                        buffer_pos += int_to_buffer(kprint_buffer + buffer_pos, one_past_last,
+                        buffer_pos += int_to_buffer(buffer + buffer_pos, one_past_last,
                                                     (uintmax_t)va_arg(list, unsigned), 16);
                         break;
                     }
@@ -95,33 +95,33 @@ void kprintv_nolock(const char *format, va_list list) {
                         int arg = va_arg(list, int);
 
                         if (arg < 0) {
-                            if (kprint_buffer + buffer_pos < one_past_last) {
-                                kprint_buffer[buffer_pos++] = '-';
+                            if (buffer + buffer_pos < one_past_last) {
+                                buffer[buffer_pos++] = '-';
                             }
 
                             arg = -arg;
                         }
 
-                        buffer_pos += int_to_buffer(kprint_buffer + buffer_pos, one_past_last,
+                        buffer_pos += int_to_buffer(buffer + buffer_pos, one_past_last,
                                                     (uintmax_t)arg, 10);
 
                         break;
                     }
 
                     case 'u': {
-                        buffer_pos += int_to_buffer(kprint_buffer + buffer_pos, one_past_last,
+                        buffer_pos += int_to_buffer(buffer + buffer_pos, one_past_last,
                                                     (uintmax_t)va_arg(list, unsigned), 10);
                         break;
                     }
 
                     case 'o': {
-                        buffer_pos += int_to_buffer(kprint_buffer + buffer_pos, one_past_last,
+                        buffer_pos += int_to_buffer(buffer + buffer_pos, one_past_last,
                                                     (uintmax_t)va_arg(list, unsigned), 8);
                         break;
                     }
 
                     case 'b': {
-                        buffer_pos += int_to_buffer(kprint_buffer + buffer_pos, one_past_last,
+                        buffer_pos += int_to_buffer(buffer + buffer_pos, one_past_last,
                                                     (uintmax_t)va_arg(list, unsigned), 2);
                         break;
                     }
@@ -130,7 +130,7 @@ void kprintv_nolock(const char *format, va_list list) {
                         switch (*s++) {
                             case 'x': {
                                 buffer_pos +=
-                                    int_to_buffer(kprint_buffer + buffer_pos, one_past_last,
+                                    int_to_buffer(buffer + buffer_pos, one_past_last,
                                                   (uintmax_t)va_arg(list, unsigned long), 16);
 
                                 break;
@@ -140,35 +140,35 @@ void kprintv_nolock(const char *format, va_list list) {
                                 long arg = va_arg(list, long);
 
                                 if (arg < 0) {
-                                    if (kprint_buffer + buffer_pos < one_past_last) {
-                                        kprint_buffer[buffer_pos++] = '-';
+                                    if (buffer + buffer_pos < one_past_last) {
+                                        buffer[buffer_pos++] = '-';
                                     }
 
                                     arg = -arg;
                                 }
 
-                                buffer_pos += int_to_buffer(kprint_buffer + buffer_pos,
+                                buffer_pos += int_to_buffer(buffer + buffer_pos,
                                                             one_past_last, (uintmax_t)arg, 10);
                                 break;
                             }
 
                             case 'u': {
                                 buffer_pos +=
-                                    int_to_buffer(kprint_buffer + buffer_pos, one_past_last,
+                                    int_to_buffer(buffer + buffer_pos, one_past_last,
                                                   (uintmax_t)va_arg(list, unsigned long), 10);
                                 break;
                             }
 
                             case 'o': {
                                 buffer_pos +=
-                                    int_to_buffer(kprint_buffer + buffer_pos, one_past_last,
+                                    int_to_buffer(buffer + buffer_pos, one_past_last,
                                                   (uintmax_t)va_arg(list, unsigned long), 8);
                                 break;
                             }
 
                             case 'b': {
                                 buffer_pos +=
-                                    int_to_buffer(kprint_buffer + buffer_pos, one_past_last,
+                                    int_to_buffer(buffer + buffer_pos, one_past_last,
                                                   (uintmax_t)va_arg(list, unsigned long), 2);
                                 break;
                             }
@@ -180,11 +180,11 @@ void kprintv_nolock(const char *format, va_list list) {
                     case 's': {
                         const char *s = va_arg(list, const char *);
                         size_t len = string_len(s);
-                        if (kprint_buffer + buffer_pos + len > one_past_last) {
-                            len = (size_t)(one_past_last - kprint_buffer - buffer_pos);
+                        if (buffer + buffer_pos + len > one_past_last) {
+                            len = (size_t)(one_past_last - buffer - buffer_pos);
                         }
 
-                        copy_memory(kprint_buffer + buffer_pos, s, len);
+                        copy_memory(buffer + buffer_pos, s, len);
                         buffer_pos += len;
                         break;
                     }
@@ -195,8 +195,8 @@ void kprintv_nolock(const char *format, va_list list) {
 
             default: {
                 // Check for room.
-                if (kprint_buffer + buffer_pos < one_past_last) {
-                    kprint_buffer[buffer_pos++] = *s++;
+                if (buffer + buffer_pos < one_past_last) {
+                    buffer[buffer_pos++] = *s++;
                 } else {
                     goto formatted;
                 }
@@ -207,7 +207,11 @@ void kprintv_nolock(const char *format, va_list list) {
     }
 
 formatted:
-    kprint_buffer[buffer_pos] = 0;
+    buffer[buffer_pos] = 0;
+}
+
+void kprintv_nolock(const char *format, va_list list) {
+    kprintv_to_buffer(kprint_buffer, KPRINT_BUFFER_SIZE, format, list);
     kputstr_nolock(kprint_buffer);
 }
 

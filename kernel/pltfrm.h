@@ -3,6 +3,6 @@
 
 #include "types.h"
 
-extern uint32_t gethwpagesize(void);
+#include "arch/aarch64/pltfrm.h"
 
 #endif

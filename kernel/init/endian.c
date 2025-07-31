@@ -1,10 +1,9 @@
 #include "endian.h"
 
-int ktest_endian() {
-    uint16_t s = 0x0001;
-    char *cp = (char *)&s;
+#pragma section(".init.text")
 
-    return *cp == 0x01 ? KLITTLE_ENDIAN : KBIG_ENDIAN;
+int ktest_endian() {
+    return KLITTLE_ENDIAN;
 }
 
 uint64_t kswap_order64(uint64_t in) {

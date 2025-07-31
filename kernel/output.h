@@ -21,4 +21,10 @@ void kprint_nolock(const char *s, ...);
 void kprintv(const char *s, va_list list);
 void kprint(const char *s, ...);
 
+void kearly_print(const char *s, ...);
+
+#define kearly_print kearly_print
+#define kearly_putstr kputstr
+#define kearly_putu kputu
+
 #endif

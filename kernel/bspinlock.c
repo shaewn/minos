@@ -1,5 +1,6 @@
 #include "bspinlock.h"
 #include "atomic.h"
+#include "cpu.h"
 
 #define UNLOCKED 0
 #define LOCKED 1

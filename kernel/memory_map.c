@@ -507,3 +507,54 @@ void release_block(struct buddy_allocator *alloc, uintptr_t region_start) {
 
     bspinlock_unlock(&alloc->lock);
 }
+
+uint64_t compute_order(uint64_t pages) {
+    // Round 'pages' up to the next power of two.
+    uint64_t trailing_ones = pages;
+    trailing_ones--;
+
+    trailing_ones |= trailing_ones >> 1;
+    trailing_ones |= trailing_ones >> 2;
+    trailing_ones |= trailing_ones >> 4;
+    trailing_ones |= trailing_ones >> 8;
+    trailing_ones |= trailing_ones >> 16;
+    trailing_ones |= trailing_ones >> 32;
+
+    // Now do a popcount on the trailing ones
+    uint64_t mask = 0x5555555555555555;
+    uint64_t num_ones = trailing_ones;
+    num_ones = ((num_ones >> 1) & mask) + (num_ones & mask);
+    mask = 0x3333333333333333;
+    num_ones = ((num_ones >> 2) & mask) + (num_ones & mask);
+    mask = 0x0f0f0f0f0f0f0f0f;
+    num_ones = ((num_ones >> 4) & mask) + (num_ones & mask);
+    mask = 0x00ff00ff00ff00ff;
+    num_ones = ((num_ones >> 8) & mask) + (num_ones & mask);
+    mask = 0x0000ffff0000ffff;
+    num_ones = ((num_ones >> 16) & mask) + (num_ones & mask);
+    mask = 0x00000000ffffffff;
+    num_ones = ((num_ones >> 32) & mask) + (num_ones & mask);
+
+    // number of bits after the highest set bit.
+    uint64_t logarithm = num_ones;
+    return logarithm;
+}
+
+int acquire_pages(struct buddy_allocator *alloc, uint64_t pages, uintptr_t *region_start, uintptr_t *region_end) {
+    if (pages == 0) {
+        return -1;
+    }
+
+    return acquire_block(alloc, compute_order(pages), region_start, region_end);
+}
+
+int acquire_bytes(struct buddy_allocator *alloc, uint64_t bytes, uintptr_t *region_start, uintptr_t *region_end) {
+    if (bytes == 0) {
+        return -1;
+    }
+
+    uint32_t page_size = gethwpagesize();
+
+    uint64_t ceiled_pages = (bytes + page_size - 1) / page_size;
+    return acquire_pages(alloc, ceiled_pages, region_start, region_end);
+}

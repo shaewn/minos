@@ -1,6 +1,6 @@
 #ifndef KERNEL_AARCH64_PLATFORM_H_
 #define KERNEL_AARCH64_PLATFORM_H_
 
-#define PAGE_SIZE 16384
+#define PAGE_SIZE 4096
 
 #endif

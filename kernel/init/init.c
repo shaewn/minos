@@ -18,5 +18,8 @@ void kinit(struct fdt_header *header) {
     build_dt(header);
     create_memory_map();
 
+    void do_idmap(void);
+    do_idmap();
+
     early_die();
 }

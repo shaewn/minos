@@ -44,8 +44,7 @@ void sctlr_el1_write(uint64_t val) { asm volatile("msr sctlr_el1, %0" ::"r"(val)
 
 void do_idmap(void) {
     __attribute__((aligned(4096))) static uint64_t l0_table[512];
-    __attribute__((aligned(4096))) static uint64_t addr0_table1[512];
-    __attribute__((aligned(4096))) static uint64_t addr0_table2[512];
+    __attribute__((aligned(4096))) static uint64_t addr0_table[512];
     __attribute__((aligned(4096))) static uint64_t l1_table[512];
 
     uint32_t indices[2];
@@ -56,9 +55,8 @@ void do_idmap(void) {
     indices[1] = (addr >> 30) & 0x1ff;
 
     l0_table[indices[0]] = (uint64_t)l1_table | TABLE_DESC;
-    // l0_table[0] = (uint64_t)addr0_table1 | TABLE_DESC;
-    // addr0_table1[0] = (uint64_t)addr0_table2 | TABLE_DESC;
-    // addr0_table2[0] = 0x09000000 | BLOCK_DESC | TTE_AF | MEM_ATTR_IDX_DEV_STRICT;
+    addr0_table[0] = 0x09000000 | BLOCK_DESC | TTE_AF | MEM_ATTR_IDX_DEV_STRICT;
+    l1_table[0] = (uint64_t) addr0_table | TABLE_DESC;
     l1_table[indices[1]] = (addr & ~0x3fffffffULL) | BLOCK_DESC | TTE_AF | MEM_ATTR_IDX_NORMAL;
 
     mair_el1_write(0x00ff);

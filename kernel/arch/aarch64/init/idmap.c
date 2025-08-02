@@ -10,6 +10,7 @@
 #define TTE_AF (1 << 10)
 #define MEM_ATTR_IDX_NORMAL (0 << 2)
 #define MEM_ATTR_IDX_DEV_STRICT (1 << 2)
+#define AP_TABLE_NO_EL0 (1ULL << 61)
 
 extern uintptr_t kernel_brk;
 extern char __kernel_start_phys;
@@ -54,10 +55,10 @@ void do_idmap(void) {
     indices[0] = (addr >> 39) & 0x1ff;
     indices[1] = (addr >> 30) & 0x1ff;
 
-    l0_table[indices[0]] = (uint64_t)l1_table | TABLE_DESC;
-    addr0_table[0] = 0x09000000 | BLOCK_DESC | TTE_AF | MEM_ATTR_IDX_DEV_STRICT;
+    l0_table[indices[0]] = (uint64_t)l1_table | TABLE_DESC | AP_TABLE_NO_EL0;
+    addr0_table[0] = 0x09000000 | BLOCK_DESC | /* TTE_AF | */ MEM_ATTR_IDX_DEV_STRICT;
     l1_table[0] = (uint64_t) addr0_table | TABLE_DESC;
-    l1_table[indices[1]] = (addr & ~0x3fffffffULL) | BLOCK_DESC | TTE_AF | MEM_ATTR_IDX_NORMAL;
+    l1_table[indices[1]] = (addr & ~0x3fffffffULL) | BLOCK_DESC | /* TTE_AF | */ MEM_ATTR_IDX_NORMAL;
 
     mair_el1_write(0x00ff);
 
@@ -66,10 +67,13 @@ void do_idmap(void) {
     tcr &= ~mask;
 
     // T0SZ
-    tcr |= 16;
+    tcr |= 16ULL;
 
+    // cacheability of tables
+    tcr |= 0b11ULL << 8;
 
-    tcr |= 0b11 << 8;
+    // hardware access flag
+    tcr |= 1ULL << 39;
 
     tcr_el1_write(tcr);
 
@@ -83,6 +87,8 @@ void do_idmap(void) {
     sctlr |= 0b101;
 
     sctlr_el1_write(sctlr);
+
+    asm volatile("isb");
 
     const char *s = "Hello, world!\n";
     while (1) if (*s) *(volatile int *)0 = *s++; 

@@ -1,8 +1,8 @@
 #include "./dt.h"
 #include "endian.h"
 
-struct dt_node *dt_root;
-extern uintptr_t kernel_brk;
+struct dt_node *dt_root_init;
+extern uintptr_t kernel_brk_init;
 
 #define KFATAL(...) early_die()
 
@@ -10,8 +10,8 @@ extern void early_die(void);
 
 #define ALLOC(size)                                                                                \
     ({                                                                                             \
-        char *p = (char *)kernel_brk;                                                              \
-        kernel_brk += size;                                                                        \
+        char *p = (char *)kernel_brk_init;                                                         \
+        kernel_brk_init += size;                                                                   \
         (void *)p;                                                                                 \
     })
 
@@ -24,12 +24,14 @@ static void clear_memory(void *dst, size_t size) {
 
 static size_t string_len(const char *s) {
     size_t size = 0;
-    while (*s++) size++;
+    while (*s++)
+        size++;
     return size;
 }
 
 static int string_compare(const char *a, const char *b) {
-    while (*a && *a == *b) ++a, ++b;
+    while (*a && *a == *b)
+        ++a, ++b;
     return *a - *b;
 }
 
@@ -62,7 +64,7 @@ void build_dt(struct fdt_header *header) {
 
                     node->parent->last_child = node;
                 } else {
-                    dt_root = node;
+                    dt_root_init = node;
                 }
 
                 current_node = node;
@@ -123,7 +125,7 @@ struct dt_node *dt_search(struct dt_node *start, const char *path) {
     struct dt_node *current = start;
 
     if (*path == '/') {
-        current = dt_root;
+        current = dt_root_init;
         while (*path == '/')
             ++path;
     } else if (!start) {
@@ -139,7 +141,8 @@ struct dt_node *dt_search(struct dt_node *start, const char *path) {
             ++s;
 
         size_t len = 0;
-        while (p != s) buf[len++] = *p, ++p, ++s;
+        while (p != s)
+            buf[len++] = *p, ++p, ++s;
         buf[len] = 0;
 
         struct dt_node *child = dt_find(current, buf);
@@ -158,7 +161,7 @@ struct dt_node *dt_search(struct dt_node *start, const char *path) {
 }
 
 struct dt_node *dt_find(struct dt_node *parent, const char *name) {
-    struct dt_node *start = parent ? parent : dt_root;
+    struct dt_node *start = parent ? parent : dt_root_init;
     for (struct dt_node *child = start->first_child; child; child = child->next_sibling) {
         if (string_compare(child->name, name) == 0) {
             return child;
@@ -173,7 +176,8 @@ struct dt_prop *dt_findprop(struct dt_node *parent, const char *propname) {
         const char *a, *b;
         a = prop->name;
         b = propname;
-        while (*a && *a == *b) ++a, ++b;
+        while (*a && *a == *b)
+            ++a, ++b;
 
         if (*a == *b) {
             return prop;

@@ -1,4 +1,5 @@
-#include "output.h"
+#include "types.h"
+#include "macros.h"
 
 typedef enum {
     EC_UNKNOWN = 0x0,
@@ -26,16 +27,16 @@ typedef enum {
 
 static uint64_t esr_el1_read(void);
 
-void kernel_ehandler(void) {
-    kprint("We're in the exception handler!\n");
+void early_ehandler(void) {
+    uint64_t esr = esr_el1_read();
+    uint64_t iss2, ec, il, iss;
 
-    uint64_t syndrome = esr_el1_read();
 
-    kprint("The syndrome register contains: 0x%lx\n", syndrome);
-
-    ExceptionClass ex_cls = (syndrome >> 26) & 0x3f;
-
-    kprint("Exception class value is %d\n", ex_cls);
+    iss2 = EXTRACT(esr, 36, 32);
+    il = EXTRACT(esr, 25, 25);
+    iss = EXTRACT(esr, 24, 0);
+    ec = EXTRACT(esr, 31, 26);
+    ExceptionClass ex_cls = ec; 
 
 #define O(s) case s: str = #s; break;
 
@@ -66,8 +67,6 @@ void kernel_ehandler(void) {
 
         default: str = "unhandled exception class"; break;
     }
-
-    kprint("Exception class: %s\n", str);
 }
 
 /* Utils */

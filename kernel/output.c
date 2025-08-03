@@ -2,13 +2,12 @@
 
 #include "bspinlock.h"
 #include "memory.h"
+#include "uart.h"
 
 bspinlock_t output_lock;
 
-volatile unsigned int * const UART0DR = (unsigned int *) 0x09000000;
-
 static void uart_putchar(char ch) {
-    *UART0DR = (unsigned int)ch;
+    *(volatile int *) UART_ADDR = (unsigned int)ch;
 }
 
 void klockout(int locked) {

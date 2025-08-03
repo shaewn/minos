@@ -2,6 +2,6 @@
 #define KERNEL_UART_H_
 
 #define UART_PHYS_ADDR 0x09000000
-#define UART_ADDR 0xffff800000000000
+#define UART_ADDR 0xffff400000000000
 
 #endif

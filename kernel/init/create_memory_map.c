@@ -8,15 +8,14 @@
 #define kprint(...)
 #define KFATAL(...) early_die()
 
-extern struct dt_node *dt_root;
-extern uintptr_t kernel_brk;
+extern struct dt_node *dt_root_init;
+extern uintptr_t kernel_brk_init;
 
 char *memory_map_start_phys, *memory_map_end_phys;
 
 [[noreturn]] extern void early_die(void);
 
 static int string_begins(const char *s, const char *pref);
-static int ranges_overlap(uintptr_t ab, uintptr_t ae, uintptr_t bb, uintptr_t be);
 
 void create_memory_map(void) {
     struct dt_node *root = dt_search(NULL, "/");
@@ -28,9 +27,9 @@ void create_memory_map(void) {
 
     // Make sure the break value is hardware page aligned,
     // so that once we're in virtual memory we can have the memory map mapped in.
-    uintptr_t ptr = (uintptr_t)kernel_brk;
+    uintptr_t ptr = (uintptr_t)kernel_brk_init;
     ptr = (ptr + page_size - 1) & ~(uintptr_t)(page_size - 1);
-    kernel_brk = ptr;
+    kernel_brk_init = ptr;
 
     struct dt_prop *address_cells, *size_cells;
     address_cells = dt_findprop(root, "#address-cells");
@@ -43,7 +42,7 @@ void create_memory_map(void) {
     uint32_t naddr = from_be32(*(uint32_t *)address_cells->data);
     uint32_t nsize = from_be32(*(uint32_t *)size_cells->data);
 
-    struct heap_data *heap_data_start = (struct heap_data *)kernel_brk,
+    struct heap_data *heap_data_start = (struct heap_data *)kernel_brk_init,
                      *heap_data_end = heap_data_start;
 
     memory_map_start_phys = (char *)heap_data_start;
@@ -163,111 +162,10 @@ void create_memory_map(void) {
 
     data_ptr = (char *)dpint;
     memory_map_end_phys = data_ptr;
-    kernel_brk = (uintptr_t)data_ptr;
-
-    void reserve_active_kernel_memory(void);
-    reserve_active_kernel_memory();
+    kernel_brk_init = (uintptr_t)data_ptr;
 }
-
-void reserve_active_kernel_memory(void) {
-    uintptr_t kmem_start, kmem_end;
-    extern char __kernel_start_phys;
-    kmem_start = (uintptr_t)&__kernel_start_phys;
-    kmem_end = (uintptr_t)kernel_brk;
-
-    uint32_t page_size = PAGE_SIZE;
-
-    if (kmem_start & (page_size - 1) || kmem_end & (page_size - 1)) {
-        KFATAL("kmem_start or kmem_end is not page aligned (0x%lx and 0x%lx, respectively)\n",
-               kmem_start, kmem_end);
-    }
-
-    kprint("Pre-allocation kernel memory footprint: 0x%lx-0x%lx\n", kmem_start, kmem_end);
-
-    for (struct heap_data *heap = (struct heap_data *)memory_map_start_phys; heap->pages; heap++) {
-        uintptr_t heap_start, heap_end;
-        heap_start = heap->addr;
-        heap_end = heap->addr + heap->pages * page_size;
-
-        if (heap_start == 0) {
-            // Reserve one page so that we can pretend NULL pointers are invalid even in physical
-            // address space.
-
-            struct buddy_allocator *a = HEAP_GET_BUDDY(heap);
-
-            for (uint64_t order = 0; order < a->num_orders; order++) {
-                struct buddy_order *o = a->orders + order;
-                BUDDY_ORDER_GET_DATA(o)->allocated = 1;
-            }
-
-            kprint("Allocating page 0x%lx-0x%lx for NULL pointer protection.\n", heap_start, heap_start + page_size);
-        } else if (ranges_overlap(kmem_start, kmem_end, heap_start, heap_end)) {
-            // Go through all overlapping pages and mark them as allocated.
-            uintptr_t overlap_start, overlap_end;
-            overlap_start = KMAX(kmem_start, heap_start);
-            overlap_end = KMIN(kmem_end, heap_end);
-
-            uint64_t page_first, page_past_last;
-
-            page_first = (overlap_start - heap_start) / page_size;
-            page_past_last = (overlap_end - heap_start) / page_size;
-
-            struct buddy_allocator *alloc = HEAP_GET_BUDDY(heap);
-
-            uint64_t order = 0;
-            uint64_t num_blocks = page_past_last - page_first;
-            uint64_t first_block = page_first;
-
-            for (uint64_t i = page_first; i < page_past_last; i++) {
-                struct page *page = HEAP_FIRST_PAGE(heap) + i;
-                page->allocated = 1;
-            }
-        }
-    }
-}
-
 
 static int string_begins(const char *s, const char *pref) {
     while (*pref && *s == *pref) ++s, ++pref;
     return !*pref;
-}
-
-/* pre: a_end != a_start && b_end != b_start */
-static int ranges_overlap(uintptr_t a_start, uintptr_t a_end, uintptr_t b_start, uintptr_t b_end) {
-    return (a_start < b_end) && (b_start < a_end);
-    /*
-       For some reason this really tripped me up at first:
-       initially, we can divide analysis into two cases: overlapping and non-overlapping.
-       consider the overlapping case:
-
-       if a is the lower region (i.e., lower base address), and b is the upper region,
-
-       we know a_start <= b_start, a_start < a_end, b_start < b_end.
-       hence, a_start < b_end.
-
-       if a_end <= b_start, then these regions wouldn't be overlapping, so !(a_end <= b_start), or
-       b_start < a_end. hence, a_start < b_end && b_start < a_end.
-
-       so the function returns true.
-
-       swapping the lower and upper regions is a symmetric case.
-
-       consider the non-overlapping case.
-
-       if a is the lower region, and b is the upper region,
-       we know a_start <= b_start, a_start < a_end, b_start < b_end.
-
-       so a_start < b_end.
-
-       now, suppose b_start < a_end.
-       the regions would then be overlapping, so it must be the case that !(b_start < a_end).
-
-       so the function returns false.
-
-       swapping the lower and upper regions is a symmetric case.
-
-       Now, since overlapping input -> returns true and non-overlapping input -> returns false,
-       we know the function works.
-
-       */
 }

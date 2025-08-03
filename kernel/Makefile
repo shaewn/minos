@@ -7,7 +7,7 @@ CC := aarch64-linux-gnu-gcc
 CFLAGS := -ffreestanding -I. -O0
 
 CFLAGS_NO_INIT :=
-CFLAGS_INIT := -fno-pic -g
+CFLAGS_INIT := -fno-pic
 
 C_SOURCES := $(shell find -path ./tests -prune -o -path ./arch -prune -o -name "**.c" -print) # include -print so that it doesn't print ./tests (man find(1))
 ASM_SOURCES := $(shell find arch/aarch64 -name "**.s" -o -name "**.S" )
@@ -18,15 +18,18 @@ INIT_OBJECTS := $(INIT_SOURCES:%.c=%.o)
 
 OBJECTS := $(ASM_OBJECTS) $(PLTFRM_SOURCES:%.c=%.o) $(C_SOURCES:%.c=%.o)
 
+TEMP_FILE_LIST := .temp_file_list.txt
+
 all: kernel.elf
 
 clean:
-	rm $(OBJECTS) kernel.elf
+	rm -f $(OBJECTS)
+	@if [[ -f $(TEMP_FILE_LIST) ]]; then \
+		xargs rm -f < $(TEMP_FILE_LIST); \
+		rm -f $(TEMP_FILE_LIST); \
+	fi
 
 kernel.elf: $(OBJECTS) linker_script.ld
-	$(info C_SOURCES is $(C_SOURCES))
-	$(info ASM_SOURCES is $(ASM_SOURCES))
-	$(info ASM_OBJECTS is $(ASM_OBJECTS))
 	$(LD) -o $@ -T linker_script.ld $(OBJECTS)
 
 $(INIT_OBJECTS): %.o: %.c
@@ -37,5 +40,7 @@ $(INIT_OBJECTS): %.o: %.c
 
 %.o: %.s
 	$(AS) -c $(AFLAGS) -o $@ -mcpu=all $<
-%.o: %.S
-	$(AS) -c $(AFLAGS) -o $@ -mcpu=all $<
+
+%: %.S
+	$(CC) -E -P -x c -o $@ $<
+	@echo $@ >> $(TEMP_FILE_LIST)

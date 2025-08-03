@@ -3,3 +3,4 @@
 tests/
 .cache/
 compile_commands.json
+linker_script.ld

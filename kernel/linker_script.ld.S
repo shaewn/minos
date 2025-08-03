@@ -1,15 +1,20 @@
 ENTRY(_start)
 
+#include "arch/aarch64/pltfrm.h"
+
 SECTIONS {
     phys_base_addr = 0x40000000;
     . = phys_base_addr;
     __kernel_start_phys = .;
-    __init_heap_begin_phys = . + (__init_heap_begin - __kernel_start) + (__init_end - .);
 
     .init.text : AT(phys_base_addr)  {
         *startup.o(.init.text)
         *init*.o(.text*)
         *(.init.text*)
+    }
+
+    .init.vector : {
+        *(.init.vector)
     }
 
     .init.data : {
@@ -27,24 +32,17 @@ SECTIONS {
         *init*.o(.bss*)
     }
 
-    /* .debug_info :  { KEEP(*(.debug_info*)) } */
-    /* .debug_abbrev : { KEEP(*(.debug_abbrev*)) } */
-    /* .debug_line : { KEEP(*(.debug_line*)) } */
-    /* .debug_str : { KEEP(*(.debug_str*)) } */
-    /* .debug_aranges : { KEEP(*(.debug_aranges*)) } */
-    /* .debug_ranges : { KEEP(*(.debug_ranges*)) } */
-    /* .debug_pubnames : { KEEP(*(.debug_pubnames*)) } */
-    /* .debug_pubtypes : { KEEP(*(.debug_pubtypes*)) } */
-    /* .debug_frame : { KEEP(*(.debug_frame*)) } */
-    /* .eh_frame : { KEEP(*(.eh_frame*)) } */
-
+    . = ALIGN(PAGE_SIZE);
     __init_end = .;
+    __kernel_end_phys = . + (__kernel_end - __kernel_start);
+    __init_heap_begin_phys = . + (__init_heap_begin - __kernel_start);
 
     . = 0xffff000000000000;
     __kernel_start = .;
 
+    __readonly_begin_phys = LOADADDR(.text);
+
     .text : AT(__init_end) {
-        /* the first '*' is a wildcard that matches all file names  */
         *(.text*)
     }
 
@@ -52,9 +50,14 @@ SECTIONS {
         *(.vector*)
     }
 
+
     .rodata : {
         *(.rodata*)
     }
+
+    __readonly_end_phys = LOADADDR(.data);
+
+    . = ALIGN(PAGE_SIZE);
 
     .data : {
         *(.data*)
@@ -90,6 +93,7 @@ SECTIONS {
         __stack_top = .;
     }
 
+    __kernel_end = .;
     __init_heap_begin = .;
 
     /DISCARD/ : {

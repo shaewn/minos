@@ -6,20 +6,24 @@
 #include "output.h"
 #include "pltfrm.h"
 
-extern uintptr_t kernel_brk;
-
 /* physical address range for the memory map */
-char *memory_map_start, *memory_map_end;
+char *memory_map_phys_start, *memory_map_phys_end;
+
+/* in virtual addresss pace */
+char *memory_map_addr_start, *memory_map_addr_end;
 
 bspinlock_t mm_lock;
 
 static int ranges_overlap(uintptr_t a_start, uintptr_t a_end, uintptr_t b_start, uintptr_t b_end);
 
+void trickle_up_allocate_pages(struct buddy_allocator *alloc, uint64_t page_first,
+                               uint64_t page_past_last);
+
 void reserve_active_kernel_memory(void) {
     uintptr_t kmem_start, kmem_end;
-    extern char __kernel_start_phys;
-    kmem_start = (uintptr_t)&__kernel_start_phys;
-    kmem_end = (uintptr_t)kernel_brk;
+    extern uintptr_t kernel_start, kernel_brk;
+    kmem_start = kernel_start;
+    kmem_end = kernel_brk;
 
     uint32_t page_size = PAGE_SIZE;
 
@@ -28,9 +32,11 @@ void reserve_active_kernel_memory(void) {
                kmem_start, kmem_end);
     }
 
-    kprint("Pre-allocation kernel memory footprint: 0x%lx-0x%lx\n", kmem_start, kmem_end);
+    // Until we've done vmap_memory_map
+    memory_map_addr_start = memory_map_phys_start;
+    memory_map_addr_end = memory_map_phys_end;
 
-    for (struct heap_data *heap = (struct heap_data *)memory_map_start; heap->pages; heap++) {
+    for (struct heap_data *heap = (struct heap_data *)memory_map_addr_start; heap->pages; heap++) {
         uintptr_t heap_start, heap_end;
         heap_start = heap->addr;
         heap_end = heap->addr + heap->pages * page_size;
@@ -41,17 +47,17 @@ void reserve_active_kernel_memory(void) {
 
             struct buddy_allocator *a = HEAP_GET_BUDDY(heap);
 
-            for (uint64_t order = 0; order < a->num_orders; order++) {
-                struct buddy_order *o = a->orders + order;
-                BUDDY_ORDER_GET_DATA(o)->allocated = 1;
-            }
+            trickle_up_allocate_pages(a, 0, 1);
 
-            kprint("Allocating page 0x%lx-0x%lx for NULL pointer protection.\n", heap_start, heap_start + page_size);
+            kprint("Allocating page 0x%lx-0x%lx for NULL pointer protection.\n", heap_start,
+                   heap_start + page_size);
         } else if (ranges_overlap(kmem_start, kmem_end, heap_start, heap_end)) {
             // Go through all overlapping pages and mark them as allocated.
             uintptr_t overlap_start, overlap_end;
             overlap_start = KMAX(kmem_start, heap_start);
             overlap_end = KMIN(kmem_end, heap_end);
+
+            kprint("Reserving range 0x%lx-0x%lx\n", overlap_start, overlap_end);
 
             uint64_t page_first, page_past_last;
 
@@ -60,17 +66,12 @@ void reserve_active_kernel_memory(void) {
 
             struct buddy_allocator *alloc = HEAP_GET_BUDDY(heap);
 
-            uint64_t order = 0;
-            uint64_t num_blocks = page_past_last - page_first;
-            uint64_t first_block = page_first;
-
-            for (uint64_t i = page_first; i < page_past_last; i++) {
-                struct page *page = HEAP_FIRST_PAGE(heap) + i;
-                page->allocated = 1;
-            }
+            trickle_up_allocate_pages(alloc, page_first, page_past_last);
         }
     }
 }
+
+void vmap_memory_map(void) {}
 
 /* pre: a_end != a_start && b_end != b_start */
 static int ranges_overlap(uintptr_t a_start, uintptr_t a_end, uintptr_t b_start, uintptr_t b_end) {
@@ -113,7 +114,7 @@ static int ranges_overlap(uintptr_t a_start, uintptr_t a_end, uintptr_t b_start,
 }
 
 void dump_memory_map(uint64_t min_order, uint64_t max_order) {
-    for (struct heap_data *heap = (struct heap_data *)memory_map_start; heap->pages; heap++) {
+    for (struct heap_data *heap = (struct heap_data *)memory_map_addr_start; heap->pages; heap++) {
         kprint("Heap at 0x%lx has %lu pages.\n", heap->addr, heap->pages);
         void dump_allocated_blocks(struct heap_data * heap, uint64_t order);
 
@@ -126,9 +127,6 @@ void dump_memory_map(uint64_t min_order, uint64_t max_order) {
         }
     }
 }
-
-void trickle_up_allocate_pages(struct buddy_allocator *alloc, uint64_t page_first,
-                               uint64_t page_past_last);
 
 void dump_allocated_blocks(struct heap_data *heap, uint64_t order) {
     struct buddy_allocator *alloc = (struct buddy_allocator *)((char *)heap + heap->buddy_start);
@@ -405,7 +403,8 @@ uint64_t compute_order(uint64_t pages) {
     return logarithm;
 }
 
-int acquire_pages(struct buddy_allocator *alloc, uint64_t pages, uintptr_t *region_start, uintptr_t *region_end) {
+int acquire_pages(struct buddy_allocator *alloc, uint64_t pages, uintptr_t *region_start,
+                  uintptr_t *region_end) {
     if (pages == 0) {
         return -1;
     }
@@ -413,7 +412,8 @@ int acquire_pages(struct buddy_allocator *alloc, uint64_t pages, uintptr_t *regi
     return acquire_block(alloc, compute_order(pages), region_start, region_end);
 }
 
-int acquire_bytes(struct buddy_allocator *alloc, uint64_t bytes, uintptr_t *region_start, uintptr_t *region_end) {
+int acquire_bytes(struct buddy_allocator *alloc, uint64_t bytes, uintptr_t *region_start,
+                  uintptr_t *region_end) {
     if (bytes == 0) {
         return -1;
     }
@@ -422,4 +422,54 @@ int acquire_bytes(struct buddy_allocator *alloc, uint64_t bytes, uintptr_t *regi
 
     uint64_t ceiled_pages = (bytes + page_size - 1) / page_size;
     return acquire_pages(alloc, ceiled_pages, region_start, region_end);
+}
+
+int global_acquire_block(uint64_t order, uintptr_t *_Nonnull region_start,
+                         uintptr_t *_Nullable region_end) {
+    for (struct heap_data *heap = (struct heap_data *)memory_map_addr_start; heap->pages; heap++) {
+        struct buddy_allocator *a = HEAP_GET_BUDDY(heap);
+        if (acquire_block(a, order, region_start, region_end) == 0) {
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+int global_acquire_pages(uint64_t pages, uintptr_t *_Nonnull region_start,
+                         uintptr_t *_Nullable region_end) {
+    for (struct heap_data *heap = (struct heap_data *)memory_map_addr_start; heap->pages; heap++) {
+        struct buddy_allocator *a = HEAP_GET_BUDDY(heap);
+        if (acquire_pages(a, pages, region_start, region_end) == 0) {
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+int global_acquire_bytes(uint64_t bytes, uintptr_t *_Nonnull region_start,
+                         uintptr_t *_Nullable region_end) {
+    for (struct heap_data *heap = (struct heap_data *)memory_map_addr_start; heap->pages; heap++) {
+        struct buddy_allocator *a = HEAP_GET_BUDDY(heap);
+        if (acquire_bytes(a, bytes, region_start, region_end) == 0) {
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+void global_release_block(uintptr_t region_start) {
+    for (struct heap_data *heap = (struct heap_data *)memory_map_addr_start; heap->pages; heap++) {
+        if (heap->addr > region_start || region_start >= heap->addr + heap->pages * PAGE_SIZE) {
+            continue;
+        }
+
+        struct buddy_allocator *a = HEAP_GET_BUDDY(heap);
+
+        release_block(a, region_start);
+    }
+
+    KFATAL("Region beginning at 0x%lx does not belong to any existing heap.\n", region_start);
 }

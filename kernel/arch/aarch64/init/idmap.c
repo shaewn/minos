@@ -1,6 +1,6 @@
 #include "macros.h"
 #include "pltfrm.h"
-#include "tt.h"
+#include "../tt.h"
 #include "types.h"
 
 extern uintptr_t kernel_brk_init;

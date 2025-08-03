@@ -26,7 +26,7 @@
 #define AP_RDONLY_ALL (3 << AP_START)
 
 // upper attributes start at bit 50
-#define BLOCK_UXN (1ULL << 54)
-#define BLOCK_PXN (1ULL << 53)
+#define BLOCK_ATTR_UXN (1ULL << 54)
+#define BLOCK_ATTR_PXN (1ULL << 53)
 
 #endif

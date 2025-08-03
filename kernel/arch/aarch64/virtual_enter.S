@@ -16,14 +16,14 @@ virtual_enter:
     ldr x8, =kernel_end
     str x9, [x8]
 
-    ldr x9, =memory_map_start_phys
+    ldr x9, =memory_map_start_init
     ldr x9, [x9]
-    ldr x8, =memory_map_start
+    ldr x8, =memory_map_phys_start
     str x9, [x8]
 
-    ldr x9, =memory_map_end_phys
+    ldr x9, =memory_map_end_init
     ldr x9, [x9]
-    ldr x8, =memory_map_end
+    ldr x8, =memory_map_phys_end
     str x9, [x8]
 
     ldr x9, =fdt_header

@@ -11,7 +11,7 @@
 extern struct dt_node *dt_root_init;
 extern uintptr_t kernel_brk_init;
 
-char *memory_map_start_phys, *memory_map_end_phys;
+char *memory_map_start_init, *memory_map_end_init;
 
 [[noreturn]] extern void early_die(void);
 
@@ -45,7 +45,7 @@ void create_memory_map(void) {
     struct heap_data *heap_data_start = (struct heap_data *)kernel_brk_init,
                      *heap_data_end = heap_data_start;
 
-    memory_map_start_phys = (char *)heap_data_start;
+    memory_map_start_init = (char *)heap_data_start;
 
     for (struct dt_node *child = root->first_child; child; child = child->next_sibling) {
         if (string_begins(child->name, "memory")) {
@@ -161,7 +161,7 @@ void create_memory_map(void) {
     dpint = (dpint + page_size - 1) & ~(uintptr_t)(page_size - 1);
 
     data_ptr = (char *)dpint;
-    memory_map_end_phys = data_ptr;
+    memory_map_end_init = data_ptr;
     kernel_brk_init = (uintptr_t)data_ptr;
 }
 

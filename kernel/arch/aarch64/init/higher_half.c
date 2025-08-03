@@ -1,6 +1,6 @@
 #include "macros.h"
 #include "pltfrm.h"
-#include "tt.h"
+#include "../tt.h"
 #include "uart.h"
 
 #if PAGE_SIZE != 4096
@@ -120,6 +120,26 @@ void map_higher_half(void) {
 
     retrieve_indices(UART_ADDR, indices);
     add_page((uint64_t *)root_table, indices, ARRAY_LEN(indices), UART_PHYS_ADDR, MEM_ATTR_IDX_DEV_STRICT);
+
+    ((uint64_t *)root_table)[RECURSIVE_INDEX] = root_table | TABLE_DESC | AP_TABLE_NO_EL0;
+
+    /*
+    addr = scan_begin;
+
+    while (addr < kernel_brk_init) {
+        extern void early_die(void);
+        if (addr >= 0x800000000000) early_die();
+        virt = 0xffff800000000000 | addr;
+
+        uint32_t flags = MEM_ATTR_IDX_NORMAL | AP_RDWR_PRIV;
+
+        retrieve_indices(virt, indices);
+        add_page((uint64_t *)root_table, indices, ARRAY_LEN(indices), addr, flags);
+
+        addr += PAGE_SIZE;
+    }
+
+    */
 
     ttbr1_el1_write(root_table);
     set_control_registers();

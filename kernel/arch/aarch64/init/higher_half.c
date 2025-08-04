@@ -60,7 +60,7 @@ int add_page(uint64_t *base_table, uint64_t *indices, int nlevels, uint64_t pa, 
     return created;
 }
 
-static void retrieve_indices(uint64_t addr, uint64_t *indices) {
+static void get_ind(uint64_t addr, uint64_t *indices) {
     indices[0] = EXTRACT(addr, 47, 39);
     indices[1] = EXTRACT(addr, 38, 30);
     indices[2] = EXTRACT(addr, 29, 21);
@@ -112,14 +112,14 @@ void map_higher_half(void) {
             flags |= AP_RDWR_PRIV | BLOCK_ATTR_PXN;
         }
 
-        retrieve_indices(virt, indices);
+        get_ind(virt, indices);
         add_page((uint64_t *)root_table, indices, ARRAY_LEN(indices), addr, flags);
 
         addr += PAGE_SIZE;
         virt += PAGE_SIZE;
     }
 
-    retrieve_indices(UART_ADDR, indices);
+    get_ind(UART_ADDR, indices);
     add_page((uint64_t *)root_table, indices, ARRAY_LEN(indices), UART_PHYS_ADDR, MEM_DEV_STRICT_IDX << TTE_MEM_ATTR_IDX_START);
 
     ((uint64_t *)root_table)[RECURSIVE_INDEX] = root_table | TABLE_DESC | AP_TABLE_NO_EL0;

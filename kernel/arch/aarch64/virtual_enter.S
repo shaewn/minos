@@ -29,6 +29,9 @@ virtual_enter:
     ldr x9, =fdt_header
     str x0, [x9]
 
+    ldr x9, =__stack_top
+    mov sp, x9
+
     ldr x9, =kvmain
     br x9
     b .

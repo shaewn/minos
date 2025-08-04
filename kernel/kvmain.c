@@ -24,11 +24,11 @@ void kvmain(void) {
     reserve_active_kernel_memory();
     dump_memory_map(0, 0);
 
-    uintptr_t va = 0xffff800000000000;
+    uintptr_t va = 0xffff834500001000;
 
     uint64_t indices[4];
-    void retrieve_indices(uint64_t *indices, int levels);
-    retrieve_indices(indices, ARRAY_LEN(indices));
+    void retrieve_indices(uint64_t addr, uint64_t *indices);
+    retrieve_indices(va, indices);
 
     int e = vmap_page(va, 0x09000000, PROT_RSYS | PROT_WSYS, MEMORY_TYPE_DEVICE_STRICT);
     if (e < 0) {

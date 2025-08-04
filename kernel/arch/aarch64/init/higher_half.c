@@ -10,7 +10,7 @@
 
 #define ISOLATE_ADDR(x) ((x) & ONES_IN_RANGE(47, LOG_PAGE_SIZE))
 
-extern uintptr_t kernel_brk_init;
+extern uintptr_t kernel_brk_init, kernel_vbrk_init;
 
 static void ttbr1_el1_write(uint64_t val);
 
@@ -100,11 +100,10 @@ void map_higher_half(void) {
     uint64_t ex_end = (uint64_t)&__readonly_end_phys;
 
     uint64_t addr = ex_beg;
-    uint64_t virt = 0xffff000000000000;
+    kernel_vbrk_init = KERNEL_VIRT_BEGIN;
     uint64_t indices[4];
 
     while (addr < scan_begin) {
-        // 0xffff000000002de0
         uint64_t flags = (MEM_NORMAL_IDX << TTE_MEM_ATTR_IDX_START);
         if (ex_beg <= addr && addr < ex_end) {
             flags |= AP_RDONLY_PRIV;
@@ -112,11 +111,11 @@ void map_higher_half(void) {
             flags |= AP_RDWR_PRIV | BLOCK_ATTR_PXN;
         }
 
-        get_ind(virt, indices);
+        get_ind(kernel_vbrk_init, indices);
         add_page((uint64_t *)root_table, indices, ARRAY_LEN(indices), addr, flags);
 
         addr += PAGE_SIZE;
-        virt += PAGE_SIZE;
+        kernel_vbrk_init += PAGE_SIZE;
     }
 
     get_ind(UART_ADDR, indices);
@@ -130,11 +129,11 @@ void map_higher_half(void) {
     while (addr < kernel_brk_init) {
         extern void early_die(void);
         if (addr >= 0x800000000000) early_die();
-        virt = 0xffff800000000000 | addr;
+        kernel_vbrk_init = 0xffff800000000000 | addr;
 
         uint32_t flags = MEM_ATTR_IDX_NORMAL | AP_RDWR_PRIV;
 
-        retrieve_indices(virt, indices);
+        retrieve_indices(kernel_vbrk_init, indices);
         add_page((uint64_t *)root_table, indices, ARRAY_LEN(indices), addr, flags);
 
         addr += PAGE_SIZE;

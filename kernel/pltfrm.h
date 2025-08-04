@@ -5,4 +5,8 @@
 
 #include "arch/aarch64/pltfrm.h"
 
+#define GET_PERCPU(var) (*ADDRESS_PERCPU(var))
+
+void set_percpu_start(void *ptr);
+
 #endif

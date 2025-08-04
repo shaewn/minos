@@ -1,1 +1,2 @@
 linker_script.ld
+linker_script.ld

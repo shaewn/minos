@@ -1,12 +1,11 @@
 #ifndef KERNEL_AARCH64_PLATFORM_H_
 #define KERNEL_AARCH64_PLATFORM_H_
 
-#define LOG_PAGE_SIZE 12
-#define PAGE_SIZE (1 << LOG_PAGE_SIZE)
+#include "defines.h"
+#include "types.h"
 
-#define KERNEL_VIRT_BEGIN 0xffff000000000000
+#define ADDRESS_PERCPU(var) ((typeof(var) *)((char *)&var + get_percpu_offset()))
 
-// 192 gives access to tables via 0xffff600000000000 through 0xffff607fffffffff
-#define RECURSIVE_INDEX 192
+uint64_t get_percpu_offset(void);
 
 #endif

@@ -1,6 +1,6 @@
 ENTRY(_start)
 
-#include "arch/aarch64/pltfrm.h"
+#include "arch/aarch64/defines.h"
 
 SECTIONS {
     phys_base_addr = 0x40000000;
@@ -75,11 +75,19 @@ SECTIONS {
         *(.got.plt)
     }
 
-    .percpu : {
-        __percpu_begin = .;
-        *(.percpu*)
-        __percpu_end = .;
+    . = ALIGN(PAGE_SIZE);
+    __percpu_begin = .;
+    .percpu.data : {
+        *(.percpu.data*)
     }
+
+    . = ALIGN(PAGE_SIZE);
+    .percpu.bss : {
+        *(.percpu.bss*)
+    }
+
+    . = ALIGN(PAGE_SIZE);
+    __percpu_end = .;
 
     STACK_SIZE = 0x10000;
     .stack : ALIGN(16) {

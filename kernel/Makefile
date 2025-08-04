@@ -10,7 +10,7 @@ CFLAGS_NO_INIT :=
 CFLAGS_INIT := -fno-pic
 
 C_SOURCES := $(shell find -path ./tests -prune -o -path ./arch -prune -o -name "*.c" -print) # include -print so that it doesn't print ./tests (man find(1))
-ASM_SOURCES := $(shell find arch/aarch64 -name "*.s" -o -name "*.S")
+ASM_SOURCES := $(shell find arch/aarch64 -name "*.S")
 ASM_OBJECTS := $(patsubst %.s,%.o,$(filter %.s,$(ASM_SOURCES))) $(patsubst %.S,%.o,$(filter %.S,$(ASM_SOURCES)))
 PLTFRM_SOURCES := $(shell find arch/aarch64 -name "*.c")
 INIT_SOURCES := $(shell find arch/aarch64/init/ init/ -name "*.c")
@@ -38,10 +38,8 @@ $(INIT_OBJECTS): %.o: %.c
 %.o: %.c
 	$(CC) -c $(CFLAGS) $(CFLAGS_NO_INIT) -o $@ $<
 
-%.o: %.s
-	$(AS) -c $(AFLAGS) -o $@ -mcpu=all $<
 %.o: %.S
-	$(AS) -c $(AFLAGS) -o $@ -mcpu=all $<
+	$(CC) -c $(AFLAGS) -o $@ $<
 
 linker_script.ld: linker_script.ld.S
 	$(CC) -E -P -x c -o $@ $<

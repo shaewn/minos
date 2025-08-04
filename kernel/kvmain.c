@@ -1,41 +1,65 @@
+#include "cpu.h"
 #include "die.h"
 #include "macros.h"
-#include "types.h"
-#include "output.h"
+#include "memory.h"
 #include "memory_map.h"
-#include "vmalloc.h"
-#include "prot.h"
 #include "memory_type.h"
+#include "output.h"
+#include "pltfrm.h"
+#include "prot.h"
+#include "types.h"
+#include "vmap.h"
+#include "kvmalloc.h"
 
 uint64_t kernel_start, kernel_end, kernel_brk;
 
 struct fdt_header *fdt_header;
 
-// Kernel virtual entry point (higher half)
-void kvmain(void) {
-    init_print();
+uintptr_t map_percpu(uintptr_t vbrk) {
+    extern char __percpu_begin, __percpu_end;
+    uintptr_t percpu_begin = (uintptr_t)&__percpu_begin;
+    uintptr_t percpu_end = (uintptr_t)&__percpu_end;
 
-    int x = 1;
-    x += 10;
-    x /= 4;
+    uintptr_t offset = 0;
 
-    kprint("Hello, world! We made it into the higher address space!\n%d\n", x);
+    while (percpu_begin + offset < percpu_end) {
+        int r;
+        uintptr_t reg;
+        r = global_acquire_pages(1, &reg, NULL);
+        if (r == -1) {
+            KFATAL("Failed to acquire necessary memory\n");
+        }
 
-    reserve_active_kernel_memory();
-    dump_memory_map(0, 0);
+        r = vmap(vbrk + offset, reg, PROT_RSYS | PROT_WSYS, MEMORY_TYPE_NORMAL, 0);
+        if (r < 0) {
+            KFATAL("vmap error: %d\n", r);
+        }
 
-    uintptr_t va = 0xffff834500001000;
+        copy_memory((void *)(vbrk + offset), (void *)(percpu_begin + offset), PAGE_SIZE);
 
-    uint64_t indices[4];
-    void retrieve_indices(uint64_t addr, uint64_t *indices);
-    retrieve_indices(va, indices);
-
-    int e = vmap_page(va, 0x09000000, PROT_RSYS | PROT_WSYS, MEMORY_TYPE_DEVICE_STRICT);
-    if (e < 0) {
-        KFATAL("vmap_page error: %d\n", e);
+        offset += PAGE_SIZE;
     }
 
-    volatile int *p = (int *)va;
-    *p = 'a';
-    *p = '\n';
+    return vbrk + offset;
+}
+
+extern PERCPU_UNINIT uintptr_t __pcpu_kernel_vbrk;
+
+// Kernel virtual entry point (higher half)
+void kvmain(uintptr_t vbrk) {
+    init_print();
+
+    reserve_active_kernel_memory();
+
+    void *percpu_copy = (void *)vbrk;
+
+    vbrk = map_percpu(vbrk);
+
+    set_percpu_start(percpu_copy);
+    GET_PERCPU(__pcpu_kernel_vbrk) = vbrk;
+
+    void *vmbuffer1 = kvmalloc(1, KVMALLOC_PERMANENT);
+    void *vmbuffer2 = kvmalloc(1, KVMALLOC_PERMANENT);
+
+    kprint("vmbuffer1 is 0x%lx\nvmbuffer2 is 0x%lx\n", vmbuffer1, vmbuffer2);
 }

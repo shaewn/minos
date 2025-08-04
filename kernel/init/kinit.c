@@ -4,6 +4,7 @@
 #include "./endian.h"
 
 uintptr_t kernel_brk_init;
+uintptr_t kernel_vbrk_init;
 
 [[noreturn]] extern void early_die(void);
 

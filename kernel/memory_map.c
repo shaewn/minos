@@ -27,14 +27,12 @@ void reserve_active_kernel_memory(void) {
 
     uint32_t page_size = PAGE_SIZE;
 
+    kprint("memmap at: 0x%lx-0x%lx\n", memory_map_addr_start, memory_map_addr_end);
+
     if (kmem_start & (page_size - 1) || kmem_end & (page_size - 1)) {
         KFATAL("kmem_start or kmem_end is not page aligned (0x%lx and 0x%lx, respectively)\n",
                kmem_start, kmem_end);
     }
-
-    // Until we've done vmap_memory_map
-    memory_map_addr_start = memory_map_phys_start;
-    memory_map_addr_end = memory_map_phys_end;
 
     for (struct heap_data *heap = (struct heap_data *)memory_map_addr_start; heap->pages; heap++) {
         uintptr_t heap_start, heap_end;
@@ -71,7 +69,11 @@ void reserve_active_kernel_memory(void) {
     }
 }
 
-void vmap_memory_map(void) {}
+void vmap_memory_map(void) {
+    // TODO: This.
+    // I think this function is for secondary cores.
+    uintptr_t pa = (uintptr_t)memory_map_phys_start;
+}
 
 /* pre: a_end != a_start && b_end != b_start */
 static int ranges_overlap(uintptr_t a_start, uintptr_t a_end, uintptr_t b_start, uintptr_t b_end) {

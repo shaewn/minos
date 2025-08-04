@@ -44,4 +44,7 @@
 #define TCR_TG_64KB 1
 #define TCR_TG_16KB 2
 
+#define TCR_HA (1ULL << 39)
+#define TCR_HD (1ULL << 40)
+
 #endif

@@ -1,6 +1,7 @@
-#include "types.h"
+#include "memory.h"
 #include "macros.h"
 #include "./tt.h"
+#include "./pltfrm.h"
 
 #include "memory_map.h"
 #include "vmalloc.h"
@@ -37,7 +38,7 @@ int gethwprot(uint64_t prot) {
         flag |= BLOCK_ATTR_PXN;
     }
 
-    return -1;
+    return flag;
 }
 
 void retrieve_indices(uint64_t addr, uint64_t *indices) {
@@ -48,16 +49,24 @@ void retrieve_indices(uint64_t addr, uint64_t *indices) {
 }
 
 /* returns a table descriptor */
-uint64_t create_new_table(void) {
+int create_new_table(uint64_t *descriptor) {
+    uint64_t begin;
+    if (global_acquire_pages(1, &begin, NULL) == -1) {
+        return -1;
+    }
+
+    clear_memory((void *)begin, PAGE_SIZE);
+
+    *descriptor = begin | TABLE_DESC | TTE_AF;
+
+    return 0;
 }
 
-int vmap_page(void *vaddr, uint64_t backing_address, uint64_t prot) {
-    uint64_t va = (uint64_t) vaddr;
-
+int vmap_page(uintptr_t va, uintptr_t pa, uint64_t prot, memory_type_t memory_type) {
     int hwprot = gethwprot(prot);
 
     if (hwprot == -1) {
-        return VSA_ERROR_INVALID_PROT;
+        return VMP_ERROR_INVALID_PROT;
     }
 
     uint64_t indices[4];
@@ -69,10 +78,28 @@ int vmap_page(void *vaddr, uint64_t backing_address, uint64_t prot) {
         uint64_t index = indices[level];
 
         if (!(ptr[index] & 1)) {
-            ptr[index] |= create_new_table();
+            uint64_t descriptor;
+            if (create_new_table(&descriptor) == -1) {
+                return VMP_ERROR_TABLE_NOMEM;
+            }
+
+            ptr[index] |= descriptor;
         }
     }
+
+    uint64_t *last = access_table(indices, nlevels - 1);
+    uint64_t lasti = indices[nlevels - 1];
+
+    uint64_t *slot = last + lasti;
+
+    if (*slot & 1) {
+        return VMP_ERROR_ALREADY_MAPPED;
+    }
+
+    *slot = pa | PAGE_DESC | hwprot | TTE_AF;
+
+    return 0;
 }
 
-void *vmalloc(void *hint, uint64_t pages) {
+void *vmalloc(uintptr_t hint, uint64_t pages) {
 }

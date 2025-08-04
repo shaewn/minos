@@ -1,0 +1,11 @@
+#ifndef KERNEL_MEMORY_TYPE_H_
+#define KERNEL_MEMORY_TYPE_H_
+
+typedef enum {
+    MEMORY_TYPE_NORMAL,
+    MEMORY_TYPE_NON_CACHEABLE,
+    MEMORY_TYPE_DEVICE_STRICT,
+    MEMORY_TYPE_DEVICE_RELAXED,
+} memory_type_t;
+
+#endif

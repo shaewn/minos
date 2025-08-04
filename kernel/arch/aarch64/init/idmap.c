@@ -2,6 +2,7 @@
 #include "pltfrm.h"
 #include "../tt.h"
 #include "types.h"
+#include "mem_idx.h"
 
 extern uintptr_t kernel_brk_init;
 extern char __kernel_start_phys;
@@ -45,22 +46,27 @@ void do_idmap(void) {
 
     l0_table[indices[0]] = (uint64_t)l1_table | TABLE_DESC | AP_TABLE_NO_EL0;
     l1_table[indices[1]] =
-        (addr & ~0x3fffffffULL) | BLOCK_DESC | /* TTE_AF | */ MEM_ATTR_IDX_NORMAL;
+        (addr & ~0x3fffffffULL) | BLOCK_DESC | TTE_AF | (MEM_NORMAL_IDX << TTE_MEM_ATTR_IDX_START);
 
-    mair_el1_write(0x00ff);
+    uint64_t mair_val = 0;
+    mair_val |= MEM_ATTR_NORMAL << 8 * MEM_NORMAL_IDX;
+    mair_val |= MEM_ATTR_DEV_STRICT << 8 * MEM_DEV_STRICT_IDX;
+    mair_val |= MEM_ATTR_DEV_RELAXED << 8 * MEM_DEV_RELAXED_IDX;
+    mair_val |= MEM_ATTR_NON_CACHEABLE << 8 * MEM_NON_CACHEABLE_IDX;
+    mair_el1_write(mair_val);
 
     uint64_t tcr = tcr_el1_read();
     uint64_t mask = (1ULL << 6) - 1;
     tcr &= ~mask;
 
     // T0SZ
-    tcr |= 16ULL;
+    tcr = REPLACE(tcr, TCR_T0SZ_END, TCR_T0SZ_START, 16);
 
     // cacheability of tables
-    tcr |= 0b11ULL << 8;
+    tcr = REPLACE(tcr, TCR_IRGN0_END, TCR_IRGN0_START, TCR_RGN_WB_RA_WA);
 
     // hardware access flag
-    tcr |= 1ULL << 39;
+    tcr |= TCR_HA;
 
     tcr_el1_write(tcr);
 

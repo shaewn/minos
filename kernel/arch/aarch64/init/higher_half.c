@@ -2,6 +2,7 @@
 #include "pltfrm.h"
 #include "../tt.h"
 #include "uart.h"
+#include "mem_idx.h"
 
 #if PAGE_SIZE != 4096
 #error Unimplemented
@@ -59,7 +60,7 @@ int add_page(uint64_t *base_table, uint64_t *indices, int nlevels, uint64_t pa, 
     return created;
 }
 
-void retrieve_indices(uint64_t addr, uint64_t *indices) {
+static void retrieve_indices(uint64_t addr, uint64_t *indices) {
     indices[0] = EXTRACT(addr, 47, 39);
     indices[1] = EXTRACT(addr, 38, 30);
     indices[2] = EXTRACT(addr, 29, 21);
@@ -104,11 +105,11 @@ void map_higher_half(void) {
 
     while (addr < scan_begin) {
         // 0xffff000000002de0
-        uint64_t flags = MEM_ATTR_IDX_NORMAL;
+        uint64_t flags = (MEM_NORMAL_IDX << TTE_MEM_ATTR_IDX_START);
         if (ex_beg <= addr && addr < ex_end) {
             flags |= AP_RDONLY_PRIV;
         } else {
-            flags |= AP_RDWR_PRIV | BLOCK_PXN;
+            flags |= AP_RDWR_PRIV | BLOCK_ATTR_PXN;
         }
 
         retrieve_indices(virt, indices);
@@ -119,7 +120,7 @@ void map_higher_half(void) {
     }
 
     retrieve_indices(UART_ADDR, indices);
-    add_page((uint64_t *)root_table, indices, ARRAY_LEN(indices), UART_PHYS_ADDR, MEM_ATTR_IDX_DEV_STRICT);
+    add_page((uint64_t *)root_table, indices, ARRAY_LEN(indices), UART_PHYS_ADDR, MEM_DEV_STRICT_IDX << TTE_MEM_ATTR_IDX_START);
 
     ((uint64_t *)root_table)[RECURSIVE_INDEX] = root_table | TABLE_DESC | AP_TABLE_NO_EL0;
 

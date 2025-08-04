@@ -8,8 +8,7 @@
 #define PAGE_DESC 0b11
 
 #define TTE_AF (1 << 10)
-#define MEM_ATTR_IDX_NORMAL (0 << 2)
-#define MEM_ATTR_IDX_DEV_STRICT (1 << 2)
+#define TTE_MEM_ATTR_IDX_START 2
 
 #define AP_TABLE_NO_EL0 (1ULL << 61)
 

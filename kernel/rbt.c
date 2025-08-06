@@ -7,10 +7,10 @@
 
 inline static void get_p_gp(struct rb_node *node, struct rb_node **p, struct rb_node **gp,
                             struct rb_node **s) {
-    *p = node->parent;
+    *p = get_parent(node);
 
     if (*p) {
-        *gp = (*p)->parent;
+        *gp = get_parent(*p);
     } else {
         *gp = NULL;
     }
@@ -18,7 +18,7 @@ inline static void get_p_gp(struct rb_node *node, struct rb_node **p, struct rb_
 
 void rb_link_node(struct rb_node *node, struct rb_node *parent, struct rb_node **pnode) {
     *pnode = node;
-    node->parent = parent;
+    set_parent(node, parent);
     node->left = node->right = NULL;
 }
 
@@ -31,10 +31,10 @@ void rotate_right(struct rb_node **root, struct rb_node *p) {
     struct rb_node *ggp;
 
     struct rb_node *n2 = p->right;
-    struct rb_node *gp = p->parent;
+    struct rb_node *gp = get_parent(p);
 
-    if (gp->parent) {
-        struct rb_node *l = gp->parent;
+    if (get_parent(gp)) {
+        struct rb_node *l = get_parent(gp);
         if (l->left == gp) {
             gp_link = &l->left;
         } else {
@@ -57,11 +57,11 @@ void rotate_right(struct rb_node **root, struct rb_node *p) {
     *gp_link = p;
 
     // must change ->parent for p, gp, and n2
-    p->parent = ggp;
-    gp->parent = p;
+    set_parent(p, ggp);
+    set_parent(gp, p);
 
     if (n2)
-        n2->parent = gp;
+        set_parent(n2, gp);
 }
 
 void rotate_left(struct rb_node **root, struct rb_node *p) {
@@ -73,10 +73,10 @@ void rotate_left(struct rb_node **root, struct rb_node *p) {
     struct rb_node *ggp;
 
     struct rb_node *n2 = p->left;
-    struct rb_node *gp = p->parent;
+    struct rb_node *gp = get_parent(p);
 
-    if (gp->parent) {
-        struct rb_node *l = gp->parent;
+    if (get_parent(gp)) {
+        struct rb_node *l = get_parent(gp);
         if (l->left == gp) {
             gp_link = &l->left;
         } else {
@@ -99,17 +99,17 @@ void rotate_left(struct rb_node **root, struct rb_node *p) {
     *gp_link = p;
 
     // must change ->parent for p, gp, and n2
-    p->parent = ggp;
-    gp->parent = p;
+    set_parent(p, ggp);
+    set_parent(gp, p);
 
     if (n2)
-        n2->parent = gp;
+        set_parent(n2, gp);
 }
 
 void rb_insert_color(struct rb_node *node, struct rb_node **root) {
-    node->blackness = RB_RED;
+    set_blackness(node, RB_RED);
 
-    while (node->parent && node->parent->blackness == RB_RED) {
+    while (get_parent(node) && get_blackness(get_parent(node)) == RB_RED) {
         // NOTE: node->parent is NOT the root (because it's red).
         struct rb_node *p, *gp, *s;
         get_p_gp(node, &p, &gp, &s);
@@ -120,14 +120,14 @@ void rb_insert_color(struct rb_node *node, struct rb_node **root) {
         if (is_p_a_left) {
             if (is_node_a_left) {
                 rotate_right(root, p);
-                node->blackness = RB_BLACK;
+                set_blackness(node, RB_BLACK);
             } else {
                 rotate_left(root, node);
             }
         } else {
             if (!is_node_a_left) {
                 rotate_left(root, p);
-                node->blackness = RB_BLACK;
+                set_blackness(node, RB_BLACK);
             } else {
                 rotate_right(root, node);
             }
@@ -136,8 +136,8 @@ void rb_insert_color(struct rb_node *node, struct rb_node **root) {
         node = p;
     }
 
-    if (!node->parent) {
-        node->blackness = RB_BLACK;
+    if (!get_parent(node)) {
+        set_blackness(node, RB_BLACK);
     }
 }
 
@@ -171,8 +171,8 @@ int is_leaf(struct rb_node *node) { return !node->left && !node->right; }
 
 inline static void fix_self_references(struct rb_node *node, struct rb_node *from,
                                        struct rb_node *to) {
-    if (node->parent == from)
-        node->parent = to;
+    if (get_parent(node) == from)
+        set_parent(node, to);
     if (node->left == from)
         node->left = to;
     if (node->right == from)
@@ -181,9 +181,9 @@ inline static void fix_self_references(struct rb_node *node, struct rb_node *fro
 
 inline static void assign_parent_to_children(struct rb_node *node) {
     if (node->left)
-        node->left->parent = node;
+        set_parent(node->left, node);
     if (node->right)
-        node->right->parent = node;
+        set_parent(node->right, node);
 }
 
 void swap_nodes(struct rb_node **root, struct rb_node *a, struct rb_node *b) {
@@ -206,8 +206,8 @@ void swap_nodes(struct rb_node **root, struct rb_node *a, struct rb_node *b) {
 
     int is_orig_a_left_child, is_orig_b_left_child;
 
-    is_orig_a_left_child = a->parent && a->parent->left == a;
-    is_orig_b_left_child = b->parent && b->parent->left == b;
+    is_orig_a_left_child = get_parent(a) && get_parent(a)->left == a;
+    is_orig_b_left_child = get_parent(b) && get_parent(b)->left == b;
 
     *a = *b;
     *b = tmp;
@@ -216,21 +216,21 @@ void swap_nodes(struct rb_node **root, struct rb_node *a, struct rb_node *b) {
     fix_self_references(a, a, b);
     fix_self_references(b, b, a);
 
-    if (a->parent) {
+    if (get_parent(a)) {
         if (is_orig_b_left_child) {
-            a_link = &a->parent->left;
+            a_link = &get_parent(a)->left;
         } else {
-            a_link = &a->parent->right;
+            a_link = &get_parent(a)->right;
         }
     } else {
         a_link = root;
     }
 
-    if (b->parent) {
+    if (get_parent(b)) {
         if (is_orig_a_left_child) {
-            b_link = &b->parent->left;
+            b_link = &get_parent(b)->left;
         } else {
-            b_link = &b->parent->right;
+            b_link = &get_parent(b)->right;
         }
     } else {
         b_link = root;
@@ -245,7 +245,7 @@ void swap_nodes(struct rb_node **root, struct rb_node *a, struct rb_node *b) {
 
 inline static void get_p_s_cl_cr(struct rb_node *node, struct rb_node **p, struct rb_node **s,
                                  struct rb_node **cl, struct rb_node **cr) {
-    *p = node->parent;
+    *p = get_parent(node);
 
     if (*p) {
         if (node == (*p)->left) {
@@ -270,73 +270,71 @@ void rb_del(struct rb_node *node, struct rb_node **root) {
         swap_nodes(root, node, successor);
     }
 
-    if (node->blackness == RB_RED) {
+    if (get_blackness(node) == RB_RED) {
         goto unlink;
     }
 
-    node->blackness = RB_DOUBLE_BLACK;
+    set_blackness(node, RB_DOUBLE_BLACK);
 
     struct rb_node *current = node;
 
     // https://medium.com/analytics-vidhya/deletion-in-red-black-rb-tree-92301e1474ea
 
-    while (current->blackness == RB_DOUBLE_BLACK && current->parent) {
+    while (get_blackness(current) == RB_DOUBLE_BLACK && get_parent(current)) {
         struct rb_node *p, *s, *cl, *cr;
         get_p_s_cl_cr(current, &p, &s, &cl, &cr);
 
         // NOTE: We're guaranteed the sibling exists, since at some point, in current's subtree,
         // there was a non-nil black node. Hence, there must be a non-nil black node in the
         // sibling's subtree.
-        if (s->blackness == RB_BLACK) {
-            if ((!cl || cl->blackness == RB_BLACK) && (!cr || cr->blackness == RB_BLACK)) {
+        if (get_blackness(s) == RB_BLACK) {
+            if ((!cl || get_blackness(cl) == RB_BLACK) && (!cr || get_blackness(cr) == RB_BLACK)) {
                 // Both children of sibling are black (either nil or actually black).
                 // Case 3.
-                p->blackness++;
+                set_blackness(p, get_blackness(p) + 1);
                 if (s)
-                    s->blackness = RB_RED;
-                current->blackness = RB_BLACK;
+                    set_blackness(s, RB_RED);
+                set_blackness(current, RB_BLACK);
                 current = p;
             }
 
             if (current == p->left) {
                 // Left mirror of 5 and 6.
 
-                if ((!cr || cr->blackness == RB_BLACK) && cl && cl->blackness == RB_RED) {
+                if ((!cr || get_blackness(cr) == RB_BLACK) && cl && get_blackness(cl) == RB_RED) {
                     // Case 5.
-                    cl->blackness = RB_BLACK;
-                    s->blackness = RB_RED;
+                    set_blackness(cl, RB_BLACK);
+                    set_blackness(s, RB_RED);
                     rotate_right(root, cl);
-                }
-
-                if (cr && cr->blackness == RB_RED) {
-                    s->blackness = p->blackness;
-                    p->blackness = RB_BLACK;
+                    // Case 6 will happen next.
+                } else if (cr && get_blackness(cr) == RB_RED) {
+                    // Case 6.
+                    set_blackness(s, get_blackness(p));
+                    set_blackness(p, RB_BLACK);
                     rotate_left(root, s);
-                    current->blackness = RB_BLACK;
-                    cr->blackness = RB_BLACK;
+                    set_blackness(current, RB_BLACK);
+                    set_blackness(cr, RB_BLACK);
                 }
             } else {
                 // Right mirror of 5 and 6.
 
-                if ((!cl || cl->blackness == RB_BLACK) && cr && cr->blackness == RB_RED) {
+                if ((!cl || get_blackness(cl) == RB_BLACK) && cr && get_blackness(cr) == RB_RED) {
                     // Case 5.
-                    cr->blackness = RB_BLACK;
-                    s->blackness = RB_RED;
+                    set_blackness(cr, RB_BLACK);
+                    set_blackness(s, RB_RED);
                     rotate_left(root, cr);
-                }
-
-                if (cl && cl->blackness == RB_RED) {
-                    s->blackness = p->blackness;
-                    p->blackness = RB_BLACK;
+                } else if (cl && get_blackness(cl) == RB_RED) {
+                    set_blackness(s, get_blackness(p));
+                    set_blackness(p, RB_BLACK);
                     rotate_right(root, s);
-                    current->blackness = RB_BLACK;
-                    cl->blackness = RB_BLACK;
+                    set_blackness(current, RB_BLACK);
+                    set_blackness(cl, RB_BLACK);
                 }
             }
         } else {
             // Case 4.
-            p->blackness = RB_RED;
-            s->blackness = RB_BLACK;
+            set_blackness(p, RB_RED);
+            set_blackness(s, RB_BLACK);
 
             if (s == p->left) {
                 rotate_right(root, s);
@@ -346,13 +344,14 @@ void rb_del(struct rb_node *node, struct rb_node **root) {
         }
     }
 
-    if (!current->parent) {
-        current->blackness = RB_BLACK;
+    if (!get_parent(current)) {
+        set_blackness(current, RB_BLACK);
     }
 
 unlink:;
+    struct rb_node *parent = get_parent(node);
     struct rb_node **pnode =
-        node->parent ? node == node->parent->left ? &node->parent->left : &node->parent->right
+        parent ? node == parent->left ? &parent->left : &parent->right
                      : root;
     *pnode = NULL;
 }

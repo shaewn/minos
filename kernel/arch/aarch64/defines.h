@@ -9,7 +9,7 @@
 // Leave 4 GiB (2^32) for kernel and initialization stuff
 #define KERNEL_HEAP_META_BEGIN (KERNEL_VIRT_BEGIN + 0x0000000100000000)
 
-// 64 GiB (2^36) maximum metadata, allowing for a roughly 16 TiB (2^44) heap (max)
+// 256 GiB (2^38) maximum metadata.
 #define KERNEL_HEAP_BEGIN (KERNEL_HEAP_META_BEGIN + 0x0000004000000000)
 
 // 8 TiB heap (2^43).

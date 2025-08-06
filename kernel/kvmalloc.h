@@ -3,13 +3,16 @@
 
 #include "types.h"
 
-// This allocation will never be freed.
+// This vma will never be freed.
 #define KVMALLOC_PERMANENT 0x1
 
-// This allocation won't cause a TLB shootdown.
-#define KVMALLOC_PRIVATE 0x2
-
 void kvmalloc_init(void);
-void *kvmalloc(uint64_t pages, int flags);
+
+/* reserves space in the kernel's virtual memory heap.
+   does not allocate physical memory for the corresponding region, or establish a mapping to any physical memory.
+   in order to acquire physical memory, see {global_}acquire_(block|pages|bytes).
+   in order to establish a mapping between a virtual page and physical page, see vmap.
+   */
+void *kvmalloc(size_t pages, int flags);
 
 #endif

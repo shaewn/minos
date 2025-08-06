@@ -39,7 +39,7 @@ $(INIT_OBJECTS): %.o: %.c
 	$(CC) -c $(CFLAGS) $(CFLAGS_NO_INIT) -o $@ $<
 
 %.o: %.S
-	$(CC) -c $(AFLAGS) -o $@ $<
+	$(CC) -c $(AFLAGS) -o $@ -Wa,-mcpu=all $<
 
 linker_script.ld: linker_script.ld.S
 	$(CC) -E -P -x c -o $@ $<

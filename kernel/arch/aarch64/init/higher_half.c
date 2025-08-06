@@ -1,7 +1,6 @@
 #include "macros.h"
 #include "pltfrm.h"
 #include "../tt.h"
-#include "uart.h"
 #include "mem_idx.h"
 
 #if PAGE_SIZE != 4096

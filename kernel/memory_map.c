@@ -76,7 +76,7 @@ void vmap_memory_map(void) {
 }
 
 /* pre: a_end != a_start && b_end != b_start */
-static int ranges_overlap(uintptr_t a_start, uintptr_t a_end, uintptr_t b_start, uintptr_t b_end) {
+int ranges_overlap(uintptr_t a_start, uintptr_t a_end, uintptr_t b_start, uintptr_t b_end) {
     return (a_start < b_end) && (b_start < a_end);
     /*
        For some reason this really tripped me up at first:

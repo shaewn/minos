@@ -2,7 +2,7 @@
 
 #include "bspinlock.h"
 #include "memory.h"
-#include "uart.h"
+#include "pltfrm.h"
 
 bspinlock_t output_lock;
 

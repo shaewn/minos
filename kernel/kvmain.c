@@ -55,15 +55,15 @@ void kvmain(uintptr_t vbrk) {
 
     vbrk = map_percpu(vbrk);
 
-    set_percpu_start(percpu_copy);
-    GET_PERCPU(__pcpu_kernel_vbrk) = vbrk;
-
     kvmalloc_init();
 
-    void *vmbuffer1 = kvmalloc(1, KVMALLOC_PERMANENT);
-    void *vmbuffer2 = kvmalloc(1, KVMALLOC_PERMANENT);
+    void *vmbuffer1 = kvmalloc(1, 0);
+    void *vmbuffer2 = kvmalloc(1, 0);
 
     kprint("vmbuffer1 is 0x%lx\nvmbuffer2 is 0x%lx\n", vmbuffer1, vmbuffer2);
+
+    kprint("using vmbuffer1 should result in fault:\n");
+    *(int *)vmbuffer1 = 10;
 
     asm volatile("svc 0");
 }

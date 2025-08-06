@@ -1,4 +1,4 @@
-#include "pltfrm.h"
+#include "defines.h"
 
     .section .init.text, "ax"
     .global _start

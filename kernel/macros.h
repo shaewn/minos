@@ -10,4 +10,8 @@
 #define CLEAR(a, h, l) (a & ~ONES_IN_RANGE(h, l)) 
 #define REPLACE(a, h, l, new_bits) (CLEAR(a, h, l) | ((new_bits) << l))
 
+#include <stddef.h>
+#define OFFSET_OF(type, member) offsetof(type, member)
+#define CONTAINER_OF(ptr, type, member) ((type *)((char *)(ptr) - OFFSET_OF(type, member)))
+
 #endif

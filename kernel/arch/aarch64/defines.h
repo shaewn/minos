@@ -1,4 +1,4 @@
-#ifndef AARCH64_DEFINES_H_ 
+#ifndef AARCH64_DEFINES_H_
 #define AARCH64_DEFINES_H_
 
 #define LOG_PAGE_SIZE 12
@@ -6,8 +6,24 @@
 
 #define KERNEL_VIRT_BEGIN 0xffff000000000000
 
+// Leave 4 GiB (2^32) for kernel and initialization stuff
+#define KERNEL_HEAP_META_BEGIN (KERNEL_VIRT_BEGIN + 0x0000000100000000)
+
+// 64 GiB (2^36) maximum metadata, allowing for a roughly 16 TiB (2^44) heap (max)
+#define KERNEL_HEAP_BEGIN (KERNEL_HEAP_META_BEGIN + 0x0000004000000000)
+
+// 8 TiB heap (2^43).
+#define KERNEL_HEAP_END (KERNEL_HEAP_BEGIN + 0x80000000000)
+
+#define KERNEL_PERMANENT_HEAP_BEGIN KERNEL_HEAP_END
+
+// 8 TiB permanent heap (2^43).
+#define KERNEL_PERMANENT_HEAP_END (KERNEL_PERMANENT_HEAP_BEGIN + 0x80000000000)
+
+#define UART_PHYS_ADDR 0x09000000
+#define UART_ADDR 0xffff400000000000
+
 // 192 gives access to tables via 0xffff600000000000 through 0xffff607fffffffff
 #define RECURSIVE_INDEX 192
-
 
 #endif

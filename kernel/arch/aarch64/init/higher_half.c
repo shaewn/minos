@@ -123,24 +123,6 @@ void map_higher_half(void) {
 
     ((uint64_t *)root_table)[RECURSIVE_INDEX] = root_table | TABLE_DESC | AP_TABLE_NO_EL0;
 
-    /*
-    addr = scan_begin;
-
-    while (addr < kernel_brk_init) {
-        extern void early_die(void);
-        if (addr >= 0x800000000000) early_die();
-        kernel_vbrk_init = 0xffff800000000000 | addr;
-
-        uint32_t flags = MEM_ATTR_IDX_NORMAL | AP_RDWR_PRIV;
-
-        retrieve_indices(kernel_vbrk_init, indices);
-        add_page((uint64_t *)root_table, indices, ARRAY_LEN(indices), addr, flags);
-
-        addr += PAGE_SIZE;
-    }
-
-    */
-
     ttbr1_el1_write(root_table);
     set_control_registers();
 }

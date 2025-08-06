@@ -4,8 +4,27 @@
 #include "output.h"
 
 PERCPU_UNINIT uintptr_t __pcpu_kernel_vbrk;
-
 #define kernel_vbrk GET_PERCPU(__pcpu_kernel_vbrk)
+
+uintptr_t heap_start, heap_end;
+uintptr_t heap_meta;
+
+// TODO: Abstract this nonsense into an rbt user.
+// NOTE: Everything in this vmalloc package has to be locked.
+struct vrange {
+    uintptr_t base, size;
+};
+
+struct vspace_node {
+    struct vspace_node *ptr;
+    struct vrange ranges[];
+};
+
+void kvmalloc_init(void) {
+    heap_start = KERNEL_HEAP_BEGIN;
+    heap_end = KERNEL_HEAP_END;
+    heap_meta = KERNEL_HEAP_META_BEGIN;
+}
 
 void *kvmalloc(uint64_t pages, int flags) {
     if (!(flags & KVMALLOC_PERMANENT)) {

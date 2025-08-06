@@ -37,7 +37,7 @@ SECTIONS {
     __kernel_end_phys = . + (__kernel_end - __kernel_start);
     __init_heap_begin_phys = . + (__init_heap_begin - __kernel_start);
 
-    . = 0xffff000000000000;
+    . = KERNEL_VIRT_BEGIN;
     __kernel_start = .;
 
     __readonly_begin_phys = LOADADDR(.text);

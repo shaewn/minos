@@ -22,7 +22,7 @@ void rb_link_node(struct rb_node *node, struct rb_node *parent, struct rb_node *
     node->left = node->right = NULL;
 }
 
-void rotate_right(struct rb_node **root, struct rb_node *p) {
+static void rotate_right(struct rb_node **root, struct rb_node *p) {
     // p is called the parent in the insertion routine.
     // its children are the nodes under operation
     // its parent is the 'grandparent'
@@ -64,7 +64,7 @@ void rotate_right(struct rb_node **root, struct rb_node *p) {
         set_parent(n2, gp);
 }
 
-void rotate_left(struct rb_node **root, struct rb_node *p) {
+static void rotate_left(struct rb_node **root, struct rb_node *p) {
     // p is called the parent in the insertion routine.
     // its children are the nodes under operation
     // its parent is the 'grandparent'
@@ -141,7 +141,7 @@ void rb_insert_color(struct rb_node *node, struct rb_node **root) {
     }
 }
 
-struct rb_node *greatest_lesser(struct rb_node *parent) {
+static struct rb_node *greatest_lesser(struct rb_node *parent) {
     struct rb_node *node = parent->left;
 
     if (!node)
@@ -154,7 +154,7 @@ struct rb_node *greatest_lesser(struct rb_node *parent) {
     return node;
 }
 
-struct rb_node *least_greater(struct rb_node *parent) {
+static struct rb_node *least_greater(struct rb_node *parent) {
     struct rb_node *node = parent->right;
 
     if (!node)
@@ -167,7 +167,7 @@ struct rb_node *least_greater(struct rb_node *parent) {
     return node;
 }
 
-int is_leaf(struct rb_node *node) { return !node->left && !node->right; }
+inline static int is_leaf(struct rb_node *node) { return !node->left && !node->right; }
 
 inline static void fix_self_references(struct rb_node *node, struct rb_node *from,
                                        struct rb_node *to) {
@@ -186,7 +186,7 @@ inline static void assign_parent_to_children(struct rb_node *node) {
         set_parent(node->right, node);
 }
 
-void swap_nodes(struct rb_node **root, struct rb_node *a, struct rb_node *b) {
+static void swap_nodes(struct rb_node **root, struct rb_node *a, struct rb_node *b) {
     // things needing to be swapped:
     // links from above (->parent->left or ->parent->right OR *root)
     // link to above (->parent)

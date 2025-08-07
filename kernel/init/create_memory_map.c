@@ -18,7 +18,7 @@ char *memory_map_start_init, *memory_map_end_init;
 static int string_begins(const char *s, const char *pref);
 
 void create_memory_map(void) {
-    struct dt_node *root = dt_search(NULL, "/");
+    struct dt_node *root = dt_search_init(NULL, "/");
     if (!root) {
         early_die();
     }
@@ -32,8 +32,8 @@ void create_memory_map(void) {
     kernel_brk_init = ptr;
 
     struct dt_prop *address_cells, *size_cells;
-    address_cells = dt_findprop(root, "#address-cells");
-    size_cells = dt_findprop(root, "#size-cells");
+    address_cells = dt_findprop_init(root, "#address-cells");
+    size_cells = dt_findprop_init(root, "#size-cells");
 
     if (!address_cells || !size_cells) {
         early_die();
@@ -51,7 +51,7 @@ void create_memory_map(void) {
         if (string_begins(child->name, "memory")) {
             kprint("Found memory node: %s\n", child->name);
 
-            struct dt_prop *reg_prop = dt_findprop(child, "reg");
+            struct dt_prop *reg_prop = dt_findprop_init(child, "reg");
             if (!reg_prop) {
                 KFATAL("Memory node %s has no 'reg' property\n", child->name);
             }

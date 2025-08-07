@@ -154,7 +154,7 @@ void vma_tree_del(struct rb_node **root, struct vma_node *node) {
 static void return_pages(uintptr_t address) {
     struct vma_node *node = vma_tree_search_for_container(root_node, address);
     if (!node) {
-        KFATAL("Returning non-allocated virtual memory area.\n");
+        KFATAL("Returning non-returnable virtual memory area.\n");
     }
 
     vma_tree_del(&root_node, node);
@@ -260,4 +260,12 @@ void *kvmalloc(size_t pages, int flags) {
 
     bspinlock_unlock(&vmalloc_lock);
     return ret;
+}
+
+void kvfree(void *ptr) {
+    bspinlock_lock(&vmalloc_lock);
+
+    return_pages((uintptr_t) ptr);
+
+    bspinlock_unlock(&vmalloc_lock);
 }

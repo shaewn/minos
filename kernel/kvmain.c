@@ -13,7 +13,7 @@
 
 uint64_t kernel_start, kernel_end, kernel_brk;
 
-struct fdt_header *fdt_header;
+struct fdt_header *fdt_header_phys;
 
 uintptr_t map_percpu(uintptr_t vbrk) {
     extern char __percpu_begin, __percpu_end;
@@ -43,7 +43,39 @@ uintptr_t map_percpu(uintptr_t vbrk) {
     return vbrk + offset;
 }
 
-extern PERCPU_UNINIT uintptr_t __pcpu_kernel_vbrk;
+void setup_timer(void) {
+    uint64_t cntfrq;
+    asm volatile("mrs %0, cntfrq_el0" : "=r"(cntfrq));
+
+    uint32_t freq_hz = cntfrq & 0xffffffff;
+
+    kprint("The timer operates at %u MHz (%u Hz)\n", freq_hz / 1000000, freq_hz);
+
+    uint32_t tval_ticks = 1 /* second */ * freq_hz;
+    uint64_t tval = tval_ticks;
+
+    asm volatile("msr daifclr, 2");
+
+    uint64_t daif;
+    asm volatile("mrs %0, daif" : "=r"(daif));
+
+    uint8_t daif_bits = daif >> 6;
+    kprint("Daif bits are %b\n", daif_bits);
+
+    daif_bits = 0;
+
+    daif &= 0xf << 6;
+    daif |= daif_bits << 6;
+
+    daif = 0;
+
+    asm volatile("msr cntp_tval_el0, %0" :: "r"(tval));
+
+    uint64_t cntp_ctl = 1;
+    asm volatile("msr cntp_ctl_el0, %0" : : "r"(cntp_ctl));
+
+    while (1);
+}
 
 // Kernel virtual entry point (higher half)
 void kvmain(uintptr_t vbrk) {
@@ -57,13 +89,6 @@ void kvmain(uintptr_t vbrk) {
 
     kvmalloc_init();
 
-    void *vmbuffer1 = kvmalloc(1, 0);
-    void *vmbuffer2 = kvmalloc(1, 0);
-
-    kprint("vmbuffer1 is 0x%lx\nvmbuffer2 is 0x%lx\n", vmbuffer1, vmbuffer2);
-
-    kprint("using vmbuffer1 should result in fault:\n");
-    *(int *)vmbuffer1 = 10;
-
-    asm volatile("svc 0");
+    void platform_startup(void);
+    platform_startup();
 }

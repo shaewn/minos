@@ -16,7 +16,7 @@ void kinit(struct fdt_header *header) {
     extern char __init_heap_begin_phys;
     kernel_brk_init = (uintptr_t) &__init_heap_begin_phys;
 
-    build_dt(header);
+    build_dt_init(header);
     create_memory_map();
 
     // Platform specific.

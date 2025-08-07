@@ -188,6 +188,18 @@ void kprintv_to_buffer(char *buffer, size_t max, const char *format, va_list lis
                         buffer_pos += len;
                         break;
                     }
+
+                    case 'c': {
+                        int ch = va_arg(list, int);
+
+                        if (buffer + buffer_pos < one_past_last) {
+                            buffer[buffer_pos++] = ch;
+                        } else {
+                            goto formatted;
+                        }
+
+                        break;
+                    }
                 }
 
                 break;

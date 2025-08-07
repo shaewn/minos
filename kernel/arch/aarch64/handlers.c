@@ -70,6 +70,10 @@ void kernel_ehandler(void) {
     kprint("Exception class: %s\n", str);
 }
 
+void irq_handler(void) {
+    kprint("Timer!\n");
+}
+
 /* Utils */
 
 static uint64_t esr_el1_read(void) {

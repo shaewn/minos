@@ -35,7 +35,7 @@ static int string_compare(const char *a, const char *b) {
     return *a - *b;
 }
 
-void build_dt(struct fdt_header *header) {
+void build_dt_init(struct fdt_header *header) {
     char *begin_structs = (char *)header + from_be32(header->off_dt_struct);
     char *begin_strings = (char *)header + from_be32(header->off_dt_strings);
     int nesting = 0;
@@ -117,7 +117,7 @@ void build_dt(struct fdt_header *header) {
     } while (nesting);
 }
 
-struct dt_node *dt_search(struct dt_node *start, const char *path) {
+struct dt_node *dt_search_init(struct dt_node *start, const char *path) {
     if (!path) {
         KFATAL("ERROR: path is a NULL pointer\n");
     }
@@ -145,7 +145,7 @@ struct dt_node *dt_search(struct dt_node *start, const char *path) {
             buf[len++] = *p, ++p, ++s;
         buf[len] = 0;
 
-        struct dt_node *child = dt_find(current, buf);
+        struct dt_node *child = dt_find_init(current, buf);
         if (!child) {
             return NULL;
         }
@@ -160,7 +160,7 @@ struct dt_node *dt_search(struct dt_node *start, const char *path) {
     return current;
 }
 
-struct dt_node *dt_find(struct dt_node *parent, const char *name) {
+struct dt_node *dt_find_init(struct dt_node *parent, const char *name) {
     struct dt_node *start = parent ? parent : dt_root_init;
     for (struct dt_node *child = start->first_child; child; child = child->next_sibling) {
         if (string_compare(child->name, name) == 0) {
@@ -171,7 +171,7 @@ struct dt_node *dt_find(struct dt_node *parent, const char *name) {
     return NULL;
 }
 
-struct dt_prop *dt_findprop(struct dt_node *parent, const char *propname) {
+struct dt_prop *dt_findprop_init(struct dt_node *parent, const char *propname) {
     for (struct dt_prop *prop = parent->first_prop; prop; prop = prop->next) {
         const char *a, *b;
         a = prop->name;

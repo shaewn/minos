@@ -14,5 +14,6 @@ void kvmalloc_init(void);
    in order to establish a mapping between a virtual page and physical page, see vmap.
    */
 void *kvmalloc(size_t pages, int flags);
+void kvfree(void *ptr);
 
 #endif

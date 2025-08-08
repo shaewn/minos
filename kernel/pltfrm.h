@@ -4,6 +4,7 @@
 #include "types.h"
 
 #include "arch/aarch64/pltfrm.h"
+#include "arch/aarch64/interrupts.h"
 
 #define GET_PERCPU(var) (*ADDRESS_PERCPU(var))
 

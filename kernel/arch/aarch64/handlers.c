@@ -98,13 +98,8 @@ void irq_handler(void) {
 
     kprint("Interrupt with intid %u\n", intid);
 
-    interrupt_handler_t handler = get_handler(intid);
-
-    if (handler != IH_NO_HANDLER) {
-        handler(intid);
-    } else {
-        kprint("Interrupt %u has no handler\n", intid);
-    }
+    void dispatch_irq(intid_t intid);
+    dispatch_irq(intid);
 }
 
 /* Utils */

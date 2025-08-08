@@ -1,3 +1,6 @@
+#include "cpu.h"
+#include "interrupts.h"
+#include "timer.h"
 #include "die.h"
 #include "fdt.h"
 #include "gic.h"
@@ -16,6 +19,14 @@ struct fdt_header *fdt_header;
 struct dt_node *rdt_root;
 
 uintptr_t gicd_base_ptr, gicr_base_ptr;
+
+static void dsb_isb(void) {
+    asm volatile("dsb ish\nisb\n");
+}
+
+static void isb(void) {
+    asm volatile("isb");
+}
 
 struct phand_ent {
     struct phand_ent *next;
@@ -417,39 +428,6 @@ static uint32_t *read_reg(uint32_t *wp, uint32_t ac, uint32_t sc,
     return wp;
 }
 
-#define SYS_REG_READ64(reg) ({ uint64_t value; asm volatile("mrs %0, " #reg :"=r"(value)); value; })
-#define SYS_REG_WRITE64(reg, value) do { asm volatile("msr " #reg ", %0" :"=r"(value)); } while (0)
-
-static uint64_t cntp_ctl_el0_read(void) {
-    return SYS_REG_READ64(cntp_ctl_el0);
-}
-
-static void cntp_ctl_el0_write(uint64_t value) {
-    SYS_REG_WRITE64(cntp_ctl_el0, value);
-}
-
-static uint64_t cntp_tval_el0_read() {
-    return SYS_REG_READ64(cntp_tval_el0);
-}
-
-static void cntp_tval_el0_write(uint64_t value) {
-    SYS_REG_WRITE64(cntp_tval_el0, value);
-}
-
-static void set_tval(int32_t value) {
-    cntp_tval_el0_write(cntp_tval_el0_read() & ~0xffffffffull | value);
-}
-
-int32_t get_tval(void) {
-    return (int32_t) cntp_tval_el0_read();
-}
-
-int check_timer_condition(void) {
-    uint64_t ctl = cntp_ctl_el0_read();
-
-    return (ctl >> 2) & 1;
-}
-
 static uintptr_t get_rd_base(void);
 
 int is_pend_sgi_or_ppi(uint32_t intid) {
@@ -468,24 +446,6 @@ int is_pend_sgi_or_ppi(uint32_t intid) {
     return (mmio_read32(reg) >> bit) & 1;
 }
 
-void setup_timer(void) {
-    uint64_t cntfrq;
-    asm volatile("mrs %0, cntfrq_el0" : "=r"(cntfrq));
-
-    uint32_t freq_hz = cntfrq & 0xffffffff;
-
-    kprint("The timer operates at %u MHz (%u Hz)\n", freq_hz / 1000000,
-           freq_hz);
-
-    int32_t tval_ticks = 1 /* second */ * freq_hz;
-
-    asm volatile("msr daifclr, #2");
-
-    set_tval(tval_ticks);
-
-    cntp_ctl_el0_write(cntp_ctl_el0_read() | 1);
-}
-
 static uint32_t get_affinity_value(void) {
     uint64_t mpidr;
     asm volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
@@ -497,14 +457,6 @@ static uint32_t get_affinity_value(void) {
     aff |= EXTRACT(mpidr, 7, 0) << 0;
 
     return aff;
-}
-
-static void dsb_isb(void) {
-    asm volatile("dsb ish\nisb\n");
-}
-
-static void isb(void) {
-    asm volatile("isb");
 }
 
 static uintptr_t get_rd_base(void) {
@@ -580,6 +532,43 @@ void set_group_sgi_or_ppi(uint32_t intid, int grp) {
 
     mmio_write32(group_ptr, (mmio_read32(group_ptr) & ~(1u << bit)) | grp << bit);
 }
+
+#define TIME_SLICE() (timer_gethz())
+#define TIMER_INTID() ((intid_t)30)
+
+void timer_handler(intid_t intid) {
+    static PERCPU_UNINIT unsigned count;
+    kprint("Timer!");
+
+    if (count) {
+        kprint(" (%u)\n", count);
+    } else {
+        kputstr("\n");
+    }
+
+    ++count;
+
+    timer_set_counter(TIME_SLICE());
+    end_intid(intid);
+}
+
+void setup_timer(void) {
+    uint32_t freq_hz = timer_gethz();
+
+    kprint("The timer operates at %u MHz (%u Hz)\n", freq_hz / 1000000,
+           freq_hz);
+
+    // TODO: Take this from the device tree.
+    enable_sgi_or_ppi(TIMER_INTID());
+    cfgr_sgi_or_ppi(TIMER_INTID(), 0);
+    set_group_sgi_or_ppi(TIMER_INTID(), 1);
+
+    establish_private_handler(TIMER_INTID(), timer_handler);
+
+    timer_set_counter(TIME_SLICE());
+    timer_enable();
+}
+
 
 void setup_interrupts(void) {
     uint64_t icc_sre;
@@ -669,37 +658,6 @@ void setup_interrupts(void) {
 
     asm volatile("msr icc_igrpen1_el1, %0" ::"r"(icc_igrpen1));
 
-
-    struct dt_node *timer_node = find_child(rdt_root, "timer");
-    if (!timer_node) {
-        KFATAL("Failed to find timer node\n");
-    }
-
-    struct dt_prop *icellsp = find_prop(intc, "#interrupt-cells");
-    if (!icellsp) {
-        KFATAL("No #interrupt-cells on primary intc.\n");
-    }
-
-    uint32_t icells = read_cell(icellsp);
-
-    struct dt_prop *timer_interrupts = find_prop(timer_node, "interrupts");
-    if (!timer_interrupts) {
-        KFATAL("Timer is not an interrupt-generating device.\n");
-    }
-
-    for (uint32_t *p = (uint32_t *)timer_interrupts->data; (uintptr_t)p < (uintptr_t)timer_interrupts->data + timer_interrupts->data_length; p += icells) {
-        uint32_t kind = from_be32(*p);
-        uint32_t intid = from_be32(p[1]) + 16;
-        uint32_t cfgr = from_be32(p[2]);
-
-        enable_sgi_or_ppi(intid);
-        cfgr_sgi_or_ppi(intid, cfgr == 1);
-
-        kprint("enabling and configuring interrupt %u\n", intid);
-
-        set_group_sgi_or_ppi(intid, 1);
-    }
-
     uintptr_t gicd_ctlr = gicd_base_ptr + GICD_CTLR;
     kprint("GICD_CTLR contains 0x%x\n", mmio_read32(gicd_ctlr));
 
@@ -709,7 +667,7 @@ void setup_interrupts(void) {
 
     dsb_isb();
 
-    asm volatile("msr daifclr, 2");
+    unmask_irqs();
 
     setup_timer();
 }
@@ -738,6 +696,7 @@ void platform_startup(void) {
 
     // Now remap the full thing.
 
+    // TODO: Make sure that we reserve the memory the fdt is occupying, otherwise our physical memory allocator might allocate it.
     fdt_header = kvmalloc(total_pages, KVMALLOC_PERMANENT);
 
     for (uint32_t i = 0; i < total_pages; i++) {

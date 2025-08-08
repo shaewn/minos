@@ -1,4 +1,5 @@
 #include "macros.h"
+#include "interrupts.h"
 #include "output.h"
 
 typedef enum {
@@ -93,14 +94,17 @@ void kernel_ehandler(void) {
 }
 
 void irq_handler(void) {
-    uint64_t icc_iar;
-    asm volatile("mrs %0, icc_iar1_el1" : "=r"(icc_iar));
-
-    uint32_t intid = EXTRACT(icc_iar, 23, 0);
+    intid_t intid = intid_ack();
 
     kprint("Interrupt with intid %u\n", intid);
 
-    asm volatile("msr icc_eoir1_el1, %0" : : "r"(icc_iar));
+    interrupt_handler_t handler = get_handler(intid);
+
+    if (handler != IH_NO_HANDLER) {
+        handler(intid);
+    } else {
+        kprint("Interrupt %u has no handler\n", intid);
+    }
 }
 
 /* Utils */

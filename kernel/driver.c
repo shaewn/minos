@@ -11,13 +11,15 @@ bspinlock_t global_driver_lock;
 LIST_HEAD(global_driver_list);
 
 static void setup_driver(struct driver *driver) {
-    driver->init(driver->context);
+    if (driver->init) {
+        driver->init(driver->context);
+    }
+
     enable_driver(driver->__id);
 }
 
-struct driver *dup_driver(struct driver *driver) {
-    struct driver *new_driver = kmalloc(sizeof(*new_driver));
-    copy_memory(driver, new_driver, sizeof(*new_driver));
+struct driver *dup_driver(struct driver *driver, struct driver *new_driver) {
+    copy_memory(new_driver, driver, sizeof(*new_driver));
 
     new_driver->__id = (driver_id_t)new_driver;
     new_driver->__enabled = false;
@@ -25,17 +27,17 @@ struct driver *dup_driver(struct driver *driver) {
 }
 
 driver_id_t register_private_driver(struct driver *in_driver) {
-    struct driver *driver = dup_driver(in_driver);
-    list_add_tail(&driver->node, &private_driver_list);
+    struct driver *driver = dup_driver(in_driver, kmalloc2(sizeof(*in_driver), KMALLOC2_PRIVATE));
+    list_add_tail(&driver->__node, &private_driver_list);
 
     setup_driver(driver);
     return driver->__id;
 }
 
 driver_id_t register_global_driver(struct driver *in_driver) {
-    struct driver *driver = dup_driver(in_driver);
+    struct driver *driver = dup_driver(in_driver, kmalloc(sizeof(*in_driver)));
     bspinlock_lock(&global_driver_lock);
-    list_add_tail(&driver->node, &global_driver_list);
+    list_add_tail(&driver->__node, &global_driver_list);
     bspinlock_unlock(&global_driver_lock);
 
     setup_driver(driver);

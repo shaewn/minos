@@ -10,7 +10,6 @@
 typedef uint64_t driver_id_t;
 
 struct driver {
-    struct list_head node;
     char name[DRIVER_NAME_MAX];
     intid_t interrupts[DRIVER_MAX_INTERRUPTS];
     void *context;
@@ -22,6 +21,7 @@ struct driver {
     void (*handler)(void *context, intid_t intid);
 
     // internal
+    struct list_head __node;
     driver_id_t __id;
     bool __enabled;
 };

@@ -1,0 +1,23 @@
+#ifndef AARCH64_GIC_H_
+#define AARCH64_GIC_H_
+
+#define GICD_CTLR 0x0000
+#define GICD_TYPER 0x0004
+#define GICD_STATUSR 0x0010
+#define GICD_SETSPI_NSR 0x0040
+#define GICD_CLRSPI_NSR 0X0048
+
+// Offset from RD_base
+#define GICR_CTLR 0x0000
+#define GICR_TYPER 0x0008
+#define GICR_STATUSR 0x0010
+#define GICR_WAKER 0x0014
+
+// Offset from SGI_base
+#define GICR_IGROUPR0 0x0080
+#define GICR_ISENABLER0 0x0100
+#define GICR_ICFGR0 0x0C00
+#define GICR_ICFGR1 0x0C04
+#define GICR_ISPENDR0 0x0200
+
+#endif

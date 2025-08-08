@@ -39,3 +39,19 @@ static void set_memory_slow(void *dst, int value, size_t size) {
         p[i] = 0;
     }
 }
+
+uint64_t mmio_read64(uintptr_t ptr) {
+    return *(volatile uint64_t *)ptr;
+}
+
+void mmio_write64(uintptr_t ptr, uint64_t val) {
+    *(volatile uint64_t *)ptr = val;
+}
+
+uint32_t mmio_read32(uintptr_t ptr) {
+    return *(volatile uint32_t *)ptr;
+}
+
+void mmio_write32(uintptr_t ptr, uint32_t val) {
+    *(volatile uint32_t *)ptr = val;
+}

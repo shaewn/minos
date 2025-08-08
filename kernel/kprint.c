@@ -1,5 +1,5 @@
-#include "output.h"
 #include "memory.h"
+#include "output.h"
 #include "string.h"
 
 #include <stdarg.h>
@@ -8,34 +8,41 @@
 #define KPRINT_BUFFER_SIZE 4096
 char kprint_buffer[KPRINT_BUFFER_SIZE];
 
-static size_t int_to_buffer(char *buffer, char *end, uintmax_t u, int radix) {
-    char tmp_buf[64];
+#define MAX_INT_BUF 64
+
+static size_t int_to_buffer(char *buffer, char *end, uintmax_t u, int radix,
+                            size_t zero_pad) {
+    char tmp_buf[MAX_INT_BUF];
     size_t i = 0;
     size_t len = 0;
 
     const char *chars;
 
+    if (zero_pad > MAX_INT_BUF) {
+        zero_pad = MAX_INT_BUF;
+    }
+
     switch (radix) {
-        case 2: {
-            chars = "01";
-            break;
-        }
+    case 2: {
+        chars = "01";
+        break;
+    }
 
-        case 8: {
-            chars = "01234567";
-            break;
-        }
+    case 8: {
+        chars = "01234567";
+        break;
+    }
 
-        case 16: {
-            chars = "0123456789abcdef";
-            break;
-        }
+    case 16: {
+        chars = "0123456789abcdef";
+        break;
+    }
 
-        default:
-            radix = 10;
-        case 10:
-            chars = "0123456789";
-            break;
+    default:
+        radix = 10;
+    case 10:
+        chars = "0123456789";
+        break;
     }
 
     if (u == 0) {
@@ -60,6 +67,13 @@ static size_t int_to_buffer(char *buffer, char *end, uintmax_t u, int radix) {
         u = dividend;
     }
 
+    while (len < zero_pad) {
+        --i;
+        ++len;
+
+        tmp_buf[i] = '0';
+    }
+
 copy_over:;
     if (buffer) {
         size_t to_copy = len;
@@ -74,7 +88,8 @@ copy_over:;
     return len;
 }
 
-void kprintv_to_buffer(char *buffer, size_t max, const char *format, va_list list) {
+void kprintv_to_buffer(char *buffer, size_t max, const char *format,
+                       va_list list) {
     size_t buffer_pos = 0;
     const char *s = format;
     // Save one for null terminator.
@@ -82,139 +97,160 @@ void kprintv_to_buffer(char *buffer, size_t max, const char *format, va_list lis
 
     while (*s) {
         switch (*s) {
-            case '%': {
+        case '%': {
+            ++s;
+
+            int pad = 0;
+            int zeros = 0;
+            int negate_pad = 0;
+
+            if (*s == '-') {
                 ++s;
+                negate_pad = 1;
+            }
+
+            if (*s >= '0' && *s <= '9') {
+                if (*s == '0') {
+                    ++s;
+                    zeros = 1;
+                    negate_pad = 0;
+                    // can't negate padding and prefix zeros.
+                }
+
+                while (*s >= '0' && *s <= '9') {
+                    pad = pad * 10 + (*s - '0');
+                    ++s;
+                }
+            }
+
+            if (negate_pad) {
+                pad *= -1;
+            }
+
+#define int_in_buf(val, base)                                                  \
+    int_to_buffer(buffer + buffer_pos, one_past_last, val, base, zeros * pad)
+
+            switch (*s++) {
+            case 'x': {
+                buffer_pos += int_in_buf((uintmax_t)va_arg(list, unsigned), 16);
+                break;
+            }
+
+            case 'd': {
+                int arg = va_arg(list, int);
+
+                if (arg < 0) {
+                    if (buffer + buffer_pos < one_past_last) {
+                        buffer[buffer_pos++] = '-';
+                    }
+
+                    arg = -arg;
+                }
+
+                buffer_pos += int_in_buf((uintmax_t)arg, 10);
+
+                break;
+            }
+
+            case 'u': {
+                buffer_pos += int_in_buf((uintmax_t)va_arg(list, unsigned), 10);
+                break;
+            }
+
+            case 'o': {
+                buffer_pos += int_in_buf((uintmax_t)va_arg(list, unsigned), 8);
+                break;
+            }
+
+            case 'b': {
+                buffer_pos += int_in_buf((uintmax_t)va_arg(list, unsigned), 2);
+                break;
+            }
+
+            case 'l': {
                 switch (*s++) {
-                    case 'x': {
-                        buffer_pos += int_to_buffer(buffer + buffer_pos, one_past_last,
-                                                    (uintmax_t)va_arg(list, unsigned), 16);
-                        break;
-                    }
+                case 'x': {
+                    buffer_pos +=
+                        int_in_buf((uintmax_t)va_arg(list, unsigned long), 16);
 
-                    case 'd': {
-                        int arg = va_arg(list, int);
+                    break;
+                }
 
-                        if (arg < 0) {
-                            if (buffer + buffer_pos < one_past_last) {
-                                buffer[buffer_pos++] = '-';
-                            }
+                case 'd': {
+                    long arg = va_arg(list, long);
 
-                            arg = -arg;
-                        }
-
-                        buffer_pos += int_to_buffer(buffer + buffer_pos, one_past_last,
-                                                    (uintmax_t)arg, 10);
-
-                        break;
-                    }
-
-                    case 'u': {
-                        buffer_pos += int_to_buffer(buffer + buffer_pos, one_past_last,
-                                                    (uintmax_t)va_arg(list, unsigned), 10);
-                        break;
-                    }
-
-                    case 'o': {
-                        buffer_pos += int_to_buffer(buffer + buffer_pos, one_past_last,
-                                                    (uintmax_t)va_arg(list, unsigned), 8);
-                        break;
-                    }
-
-                    case 'b': {
-                        buffer_pos += int_to_buffer(buffer + buffer_pos, one_past_last,
-                                                    (uintmax_t)va_arg(list, unsigned), 2);
-                        break;
-                    }
-
-                    case 'l': {
-                        switch (*s++) {
-                            case 'x': {
-                                buffer_pos +=
-                                    int_to_buffer(buffer + buffer_pos, one_past_last,
-                                                  (uintmax_t)va_arg(list, unsigned long), 16);
-
-                                break;
-                            }
-
-                            case 'd': {
-                                long arg = va_arg(list, long);
-
-                                if (arg < 0) {
-                                    if (buffer + buffer_pos < one_past_last) {
-                                        buffer[buffer_pos++] = '-';
-                                    }
-
-                                    arg = -arg;
-                                }
-
-                                buffer_pos += int_to_buffer(buffer + buffer_pos,
-                                                            one_past_last, (uintmax_t)arg, 10);
-                                break;
-                            }
-
-                            case 'u': {
-                                buffer_pos +=
-                                    int_to_buffer(buffer + buffer_pos, one_past_last,
-                                                  (uintmax_t)va_arg(list, unsigned long), 10);
-                                break;
-                            }
-
-                            case 'o': {
-                                buffer_pos +=
-                                    int_to_buffer(buffer + buffer_pos, one_past_last,
-                                                  (uintmax_t)va_arg(list, unsigned long), 8);
-                                break;
-                            }
-
-                            case 'b': {
-                                buffer_pos +=
-                                    int_to_buffer(buffer + buffer_pos, one_past_last,
-                                                  (uintmax_t)va_arg(list, unsigned long), 2);
-                                break;
-                            }
-                        }
-
-                        break;
-                    }
-
-                    case 's': {
-                        const char *s = va_arg(list, const char *);
-                        size_t len = string_len(s);
-                        if (buffer + buffer_pos + len > one_past_last) {
-                            len = (size_t)(one_past_last - buffer - buffer_pos);
-                        }
-
-                        copy_memory(buffer + buffer_pos, s, len);
-                        buffer_pos += len;
-                        break;
-                    }
-
-                    case 'c': {
-                        int ch = va_arg(list, int);
-
+                    if (arg < 0) {
                         if (buffer + buffer_pos < one_past_last) {
-                            buffer[buffer_pos++] = ch;
-                        } else {
-                            goto formatted;
+                            buffer[buffer_pos++] = '-';
                         }
 
-                        break;
+                        arg = -arg;
                     }
+
+                    buffer_pos += int_in_buf((uintmax_t)arg, 10);
+                    break;
+                }
+
+                case 'u': {
+                    buffer_pos +=
+                        int_in_buf((uintmax_t)va_arg(list, unsigned long), 10);
+                    break;
+                }
+
+                case 'o': {
+                    buffer_pos +=
+                        int_in_buf((uintmax_t)va_arg(list, unsigned long), 8);
+                    break;
+                }
+
+                case 'b': {
+                    buffer_pos +=
+                        int_in_buf((uintmax_t)va_arg(list, unsigned long), 2);
+                    break;
+                }
                 }
 
                 break;
             }
 
-            default: {
-                // Check for room.
+            case 's': {
+                const char *s = va_arg(list, const char *);
+                size_t len = string_len(s);
+                if (buffer + buffer_pos + len > one_past_last) {
+                    len = (size_t)(one_past_last - buffer - buffer_pos);
+                }
+
+                copy_memory(buffer + buffer_pos, s, len);
+                buffer_pos += len;
+                break;
+            }
+
+            case 'c': {
+                int ch = va_arg(list, int);
+
                 if (buffer + buffer_pos < one_past_last) {
-                    buffer[buffer_pos++] = *s++;
+                    buffer[buffer_pos++] = ch;
                 } else {
                     goto formatted;
                 }
 
                 break;
             }
+            }
+
+            break;
+        }
+
+        default: {
+            // Check for room.
+            if (buffer + buffer_pos < one_past_last) {
+                buffer[buffer_pos++] = *s++;
+            } else {
+                goto formatted;
+            }
+
+            break;
+        }
         }
     }
 
@@ -256,9 +292,7 @@ void enable_simd(void) {
     // See D24.2.33 of the A-profile reference manual (page 7376 in my version)
     asm volatile("mrs %0, cpacr_el1" : "=r"(cpacr));
     cpacr |= 3 << 20;
-    asm volatile("msr cpacr_el1, %0" : :"r"(cpacr));
+    asm volatile("msr cpacr_el1, %0" : : "r"(cpacr));
 }
 
-void init_print(void) {
-    enable_simd();
-}
+void init_print(void) { enable_simd(); }

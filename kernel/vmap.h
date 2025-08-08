@@ -16,4 +16,7 @@
 int vmap(uintptr_t va, uintptr_t pa, uint64_t prot, memory_type_t memory_type, int flags);
 int vumap(uintptr_t va);
 
+int vmap_range(uintptr_t start_va, uintptr_t start_pa, size_t pages, uint64_t prot, memory_type_t memory_type, int flags);
+int vumap_range(uintptr_t start_va, size_t pages);
+
 #endif

@@ -55,6 +55,11 @@ virtual_enter:
     ldr x9, =virtual_vector_base
     msr vbar_el1, x9
 
-    ldr x9, =kvmain
+    ldr x9, =vstart
     br x9
+
+    .text
+    // Trampoline, because we will un-idmap everything.
+vstart:
+    bl kvmain
     b .

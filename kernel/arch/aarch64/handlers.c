@@ -1,3 +1,4 @@
+#include "macros.h"
 #include "output.h"
 
 typedef enum {
@@ -68,10 +69,38 @@ void kernel_ehandler(void) {
     }
 
     kprint("Exception class: %s\n", str);
+
+    uint64_t far;
+    asm volatile("mrs %0, far_el1\n" : "=r"(far));
+
+    switch (ex_cls) {
+    case EC_INSTR_ABRT_LOWER_LEVEL:
+    case EC_INSTR_ABRT:
+    case EC_PC_ALIGN:
+    case EC_DATA_ABRT_LOWER_LEVEL:
+    case EC_DATA_ABRT:
+    case EC_SP_ALIGN:
+        kprint("FAR_EL1 contains: 0x%lx\n", far);
+        break;
+    default: break;
+    }
+
+    uint64_t elr;
+    asm volatile("mrs %0, elr_el1\n" : "=r"(elr));
+    kprint("ELR_EL1 contains: 0x%lx\n", elr);
+
+    while (1);
 }
 
 void irq_handler(void) {
-    kprint("Timer!\n");
+    uint64_t icc_iar;
+    asm volatile("mrs %0, icc_iar1_el1" : "=r"(icc_iar));
+
+    uint32_t intid = EXTRACT(icc_iar, 23, 0);
+
+    kprint("Interrupt with intid %u\n", intid);
+
+    asm volatile("msr icc_eoir1_el1, %0" : : "r"(icc_iar));
 }
 
 /* Utils */

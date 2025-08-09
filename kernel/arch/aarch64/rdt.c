@@ -4,8 +4,8 @@
 #include "kmalloc.h"
 #include "memory.h"
 #include "output.h"
-#include "string.h"
 #include "phandle_table.h"
+#include "string.h"
 
 extern struct fdt_header *fdt_header;
 struct rdt_node *rdt_root;
@@ -105,6 +105,58 @@ struct rdt_node *rdt_find_child(struct rdt_node *node, const char *prefix) {
     }
 
     return NULL;
+}
+
+struct rdt_node *rdt_find_child_exact(struct rdt_node *node, const char *name) {
+    LIST_FOREACH(&node->child_list, cnode) {
+        struct rdt_node *child = CONTAINER_OF(cnode, struct rdt_node, node);
+        if (string_compare(child->name, name) == 0) {
+            return child;
+        }
+    }
+
+    return NULL;
+}
+
+struct rdt_node *rdt_find_node(struct rdt_node *node, const char *path) {
+    const char *s;
+    s = path;
+
+    struct rdt_node *current;
+
+    if (*s == '/') {
+        current = rdt_root;
+
+        while (*s && *s == '/')
+            ++s;
+    } else {
+        current = node;
+    }
+
+    while (current && *s) {
+        const char *e = s;
+
+        while (*e && *e != '/')
+            ++e;
+
+        size_t len = e - s;
+        char buf[64];
+
+        if (len >= ARRAY_LEN(buf)) {
+            len = ARRAY_LEN(buf) - 1;
+        }
+
+        copy_memory(buf, s, len);
+        buf[len] = 0;
+
+        current = rdt_find_child_exact(current, buf);
+
+        s = e;
+        while (*s && *s == '/')
+            ++s;
+    }
+
+    return current;
 }
 
 void putspace(int amount) {
@@ -232,17 +284,25 @@ void print_interrupts(struct rdt_node *node, struct rdt_prop *prop, int depth) {
     kputstr("\n");
 }
 
+void print_cell(struct rdt_node *node, struct rdt_prop *prop, int depth) {
+    putspace(depth);
+    kprint("0x%08lx\n", read_cell(prop));
+}
+
 void print_special(struct rdt_node *node, struct rdt_prop *prop, int depth) {
-    const char *special_names[] = {
-        "compatible",     "reg",           "phandle",          "interrupt-parent",
-        "#address-cells", "#size-cells",   "#interrupt-cells", "model",
-        "serial-number",  "chassis-type",  "bootargs",         "stdout-path",
-        "stdin-path",     "enable-method", "interrupts"};
+    const char *special_names[] = {"compatible",    "method",           "reg",
+                                   "phandle",       "interrupt-parent", "#address-cells",
+                                   "#size-cells",   "#interrupt-cells", "model",
+                                   "serial-number", "chassis-type",     "bootargs",
+                                   "stdout-path",   "stdin-path",       "enable-method",
+                                   "interrupts",    "migrate",          "cpu_on",
+                                   "cpu_off",       "cpu_suspend"};
 
     void (*funcs[])(struct rdt_node *node, struct rdt_prop *prop, int depth) = {
-        print_stringlist, print_reg,    print_phandle, print_interrupt_parent, print_cells,
-        print_cells,      print_cells,  print_string,  print_string,           print_string,
-        print_string,     print_string, print_string,  print_string,           print_interrupts};
+        print_stringlist, print_string, print_reg,    print_phandle, print_interrupt_parent,
+        print_cells,      print_cells,  print_cells,  print_string,  print_string,
+        print_string,     print_string, print_string, print_string,  print_string,
+        print_interrupts, print_cell,   print_cell,   print_cell,    print_cell};
 
     for (int i = 0; i < ARRAY_LEN(special_names); i++) {
         if (string_compare(special_names[i], prop->name) == 0) {
@@ -271,8 +331,5 @@ static void print_rdt_node(struct rdt_node *root, int depth) {
     }
 }
 
-void print_rdt(void) {
-    print_rdt_node(rdt_root, 1);
-}
-
+void print_rdt(void) { print_rdt_node(rdt_root, 1); }
 uint32_t read_cell(struct rdt_prop *prop) { return FROM_BE_32(*(uint32_t *)prop->data); }

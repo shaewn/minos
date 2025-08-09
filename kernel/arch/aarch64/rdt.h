@@ -21,7 +21,9 @@ struct rdt_node {
 
 void build_rdt(void);
 
+struct rdt_node *rdt_find_node(struct rdt_node *node, const char *path);
 struct rdt_node *rdt_find_child(struct rdt_node *node, const char *prefix);
+struct rdt_node *rdt_find_child_exact(struct rdt_node *node, const char *name);
 struct rdt_prop *rdt_find_prop(struct rdt_node *node, const char *name);
 uint32_t read_cell(struct rdt_prop *prop);
 

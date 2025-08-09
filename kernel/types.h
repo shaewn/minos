@@ -9,7 +9,9 @@
 #define _Nullable
 #define _Nonnull
 
-typedef int cpu_t;
+typedef uint32_t cpu_t;
+
+#define CPU_INVALID ((cpu_t)-1)
 
 typedef struct bspinlock {
     uint8_t flag;

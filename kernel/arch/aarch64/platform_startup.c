@@ -1,7 +1,8 @@
 #include "../../pltfrm.h"
-#include "driver.h"
+#include "arch/aarch64/cpu_id.h"
 #include "cpu.h"
 #include "die.h"
+#include "driver.h"
 #include "fdt.h"
 #include "gic.h"
 #include "interrupts.h"
@@ -110,8 +111,8 @@ struct rdt_node *find_primary_interrupt_controller(void) {
     return NULL;
 }
 
-static uint32_t *read_reg(uint32_t *wp, uint32_t ac, uint32_t sc, uint64_t *addr, uint64_t *size) {
-    if (ac) {
+static const uint32_t *read_reg(const uint32_t *wp, uint32_t ac, uint32_t sc, uint64_t *addr, uint64_t *size) {
+    if (ac && addr) {
         *addr = FROM_BE_32(*wp++);
         if (ac == 2) {
             *addr <<= 32;
@@ -119,7 +120,7 @@ static uint32_t *read_reg(uint32_t *wp, uint32_t ac, uint32_t sc, uint64_t *addr
         }
     }
 
-    if (sc) {
+    if (sc && size) {
         *size = FROM_BE_32(*wp++);
         if (sc == 2) {
             *size <<= 32;
@@ -170,24 +171,12 @@ static void timer_handler(void *ctx, intid_t intid) {
     end_intid(intid);
 }
 
-static void timer_on_enable(void *context) {
-    irq_enable_private(TIMER_INTID(), true);
-}
+static void timer_on_enable(void *context) { irq_enable_private(TIMER_INTID(), true); }
 
-static void timer_on_disable(void *context) {
-    irq_disable_private(TIMER_INTID());
-}
+static void timer_on_disable(void *context) { irq_disable_private(TIMER_INTID()); }
 
 static PERCPU_INIT struct driver timer_driver = {
-    "Generic Timer",
-    {30},
-    NULL,
-    NULL,
-    NULL,
-    timer_on_enable,
-    timer_on_disable,
-    timer_handler
-};
+    "Generic Timer", {30}, NULL, NULL, NULL, timer_on_enable, timer_on_disable, timer_handler};
 
 void setup_timer(void) {
     uint32_t freq_hz = timer_gethz();
@@ -282,7 +271,7 @@ void setup_interrupts(void) {
 
     struct rdt_prop *reg = rdt_find_prop(intc, "reg");
 
-    uint32_t *data = (uint32_t *)reg->data;
+    const uint32_t *data = (const uint32_t *)reg->data;
 
     uint32_t ac, sc;
     find_parent_ac_sc(intc, &ac, &sc);
@@ -317,8 +306,29 @@ void setup_interrupts(void) {
     dsb_isb();
 
     unmask_irqs();
+}
 
-    setup_timer();
+void bring_up_secondary(void) {
+    struct rdt_node *cpus_node = rdt_find_node(NULL, "/cpus");
+    if (!cpus_node)
+        KFATAL("Failed to find cpus_node");
+
+    struct rdt_prop *ac = rdt_find_prop(cpus_node, "#address-cells");
+    uint32_t cells = ac ? read_cell(ac) : 2;
+
+    LIST_FOREACH(&cpus_node->child_list, cnode) {
+        struct rdt_node *child = CONTAINER_OF(cnode, struct rdt_node, node);
+
+        if (string_begins(child->name, "cpu@")) {
+            struct rdt_prop *reg = rdt_find_prop(child, "reg");
+            uint64_t mpidr;
+            read_reg(reg->data, cells, 0, &mpidr, NULL);
+
+            assign_cpu_id(mpidr);
+        }
+    }
+
+    kprint("We're running on cpu %u\n", this_cpu());
 }
 
 void platform_startup(void) {
@@ -356,5 +366,7 @@ void platform_startup(void) {
 
     build_rdt();
     print_rdt();
+
     setup_interrupts();
+    bring_up_secondary();
 }

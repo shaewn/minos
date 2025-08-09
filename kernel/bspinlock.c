@@ -13,11 +13,11 @@ void bspinlock_lock(volatile bspinlock_t *lock) {
         locked_expected = UNLOCKED;
     }
 
-    lock->holder = cpu_current();
+    lock->holder = this_cpu();
 }
 
 void bspinlock_unlock(volatile bspinlock_t *lock) {
-    if (lock->holder != cpu_current()) {
+    if (lock->holder != this_cpu()) {
         return;
     }
     // Nothing about the lock can change while we're the owner, since they must acquire it by us

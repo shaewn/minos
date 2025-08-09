@@ -191,3 +191,11 @@ int vumap(uintptr_t va) {
 
     return 0;
 }
+
+uintptr_t get_phys_mapping(uintptr_t va) {
+    uint64_t indices[4];
+    kretrieve_indices(va, indices);
+
+    uint64_t *table_vals = access_table(indices, 3);
+    return (table_vals[indices[3]] & ONES_IN_RANGE(47, LOG_PAGE_SIZE)) + (va & (PAGE_SIZE - 1));
+}

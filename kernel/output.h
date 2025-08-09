@@ -5,8 +5,9 @@
 
 void klockout(int locked);
 
-// automatically acquires and releases a spin lock
 void kputch(int ch);
+
+// automatically acquires and releases a spin lock
 void kputstr(const char *s);
 void kputu(uintmax_t u, int radix);
 

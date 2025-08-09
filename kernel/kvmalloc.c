@@ -252,10 +252,8 @@ void *kvmalloc(size_t pages, int flags) {
     if (!(flags & KVMALLOC_PERMANENT)) {
         ret = request_pages(pages);
     } else {
-        void *ptr = (void *)pheap;
+        ret = (void *)pheap;
         pheap += pages * PAGE_SIZE;
-
-        ret = ptr;
     }
 
     bspinlock_unlock(&vmalloc_lock);

@@ -15,7 +15,7 @@ uint64_t kernel_start, kernel_end, kernel_brk;
 
 struct fdt_header *fdt_header_phys;
 
-uintptr_t map_percpu(uintptr_t vbrk) {
+uintptr_t map_percpu(uintptr_t va_start) {
     extern char __percpu_begin, __percpu_end;
     uintptr_t percpu_begin = (uintptr_t)&__percpu_begin;
     uintptr_t percpu_end = (uintptr_t)&__percpu_end;
@@ -30,17 +30,17 @@ uintptr_t map_percpu(uintptr_t vbrk) {
             KFATAL("Failed to acquire necessary memory\n");
         }
 
-        r = vmap(vbrk + offset, reg, PROT_RSYS | PROT_WSYS, MEMORY_TYPE_NORMAL, 0);
+        r = vmap(va_start + offset, reg, PROT_RSYS | PROT_WSYS, MEMORY_TYPE_NORMAL, 0);
         if (r < 0) {
             KFATAL("vmap error: %d\n", r);
         }
 
-        copy_memory((void *)(vbrk + offset), (void *)(percpu_begin + offset), PAGE_SIZE);
-
         offset += PAGE_SIZE;
     }
 
-    return vbrk + offset;
+    copy_memory((void *)va_start, (void *)percpu_begin, percpu_end - percpu_begin);
+
+    return va_start + offset;
 }
 
 // Kernel virtual entry point (higher half)
@@ -57,4 +57,9 @@ void kvmain(uintptr_t vbrk) {
 
     void platform_startup(void);
     platform_startup();
+}
+
+void kvmain2(void) {
+    init_print();
+    kprint("Hello, world (%u)\n", this_cpu());
 }

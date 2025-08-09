@@ -1,6 +1,7 @@
 ENTRY(_start)
 
 #include "arch/aarch64/defines.h"
+#include "config.h"
 
 SECTIONS {
     phys_base_addr = 0x40000000;
@@ -89,14 +90,13 @@ SECTIONS {
     . = ALIGN(PAGE_SIZE);
     __percpu_end = .;
 
-    STACK_SIZE = 0x10000;
     .stack : ALIGN(16) {
         __stack_bottom = .;
         __stack_bottom_phys = LOADADDR(.stack);
-        __stack_top_phys = LOADADDR(.stack) + STACK_SIZE;
+        __stack_top_phys = LOADADDR(.stack) + KSTACK_SIZE;
 
         /* 64 KiB stack */
-        . += STACK_SIZE;
+        . += KSTACK_SIZE;
 
         __stack_top = .;
     }

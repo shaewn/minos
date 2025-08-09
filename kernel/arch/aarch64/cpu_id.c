@@ -13,26 +13,26 @@ cpu_t assign_cpu_id(uint64_t mpidr) {
 cpu_t get_cpu_id(uint64_t mpidr) {
     uint32_t affinities = get_affinities(mpidr);
     for (uint32_t i = 0; i < MAX_CPUS; i++) {
-        if (get_affinities(mpidr_table[i]) == affinities) return i;
+        if (get_affinities(mpidr_table[i]) == affinities)
+            return i;
     }
 
     return CPU_INVALID;
 }
 
-uint32_t cpu_count(void) {
-    return current_index;
-}
+uint32_t cpu_count(void) { return current_index; }
 
 cpu_t this_cpu(void) {
     uint64_t mpidr;
-    asm volatile("mrs %0, mpidr_el1" :"=r"(mpidr));
+    asm volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
 
     return get_cpu_id(mpidr);
 }
 
 uint64_t get_mpidr(cpu_t cpu) {
-    if (cpu >= MAX_CPUS) cpu = 0;
-    return mpidr_table[cpu];
+    if (cpu >= current_index)
+        cpu = 0;
+    return (mpidr_table[cpu] & (0xffull << 32 | 0xffffffull));
 }
 
 uint32_t get_affinities(uint64_t mpidr) {

@@ -1,5 +1,6 @@
 #include "../../pltfrm.h"
 #include "arch/aarch64/cpu_id.h"
+#include "config.h"
 #include "cpu.h"
 #include "die.h"
 #include "driver.h"
@@ -10,11 +11,13 @@
 #include "kvmalloc.h"
 #include "macros.h"
 #include "memory.h"
+#include "memory_map.h"
 #include "output.h"
 #include "phandle_table.h"
 #include "pltfrm.h"
 #include "prot.h"
 #include "rdt.h"
+#include "secondary_context.h"
 #include "string.h"
 #include "timer.h"
 #include "vmap.h"
@@ -111,7 +114,8 @@ struct rdt_node *find_primary_interrupt_controller(void) {
     return NULL;
 }
 
-static const uint32_t *read_reg(const uint32_t *wp, uint32_t ac, uint32_t sc, uint64_t *addr, uint64_t *size) {
+static const uint32_t *read_reg(const uint32_t *wp, uint32_t ac, uint32_t sc,
+                                uint64_t *addr, uint64_t *size) {
     if (ac && addr) {
         *addr = FROM_BE_32(*wp++);
         if (ac == 2) {
@@ -171,17 +175,20 @@ static void timer_handler(void *ctx, intid_t intid) {
     end_intid(intid);
 }
 
-static void timer_on_enable(void *context) { irq_enable_private(TIMER_INTID(), true); }
+static void timer_on_enable(void *context) {
+    irq_enable_private(TIMER_INTID(), true);
+}
 
-static void timer_on_disable(void *context) { irq_disable_private(TIMER_INTID()); }
+static void timer_on_disable(void *context) {
+    irq_disable_private(TIMER_INTID());
+}
 
 static PERCPU_INIT struct driver timer_driver = {
-    "Generic Timer", {30}, NULL, NULL, NULL, timer_on_enable, timer_on_disable, timer_handler};
+    "Generic Timer",  {30},         NULL, NULL, NULL, timer_on_enable,
+    timer_on_disable, timer_handler};
 
 void setup_timer(void) {
     uint32_t freq_hz = timer_gethz();
-
-    kprint("The timer operates at %u MHz (%u Hz)\n", freq_hz / 1000000, freq_hz);
 
     timer_driver.context = &timer_ctx;
     register_private_driver(&timer_driver);
@@ -193,7 +200,8 @@ void setup_timer(void) {
         ;
 }
 
-static void find_parent_ac_sc(struct rdt_node *node, uint32_t *ac, uint32_t *sc) {
+static void find_parent_ac_sc(struct rdt_node *node, uint32_t *ac,
+                              uint32_t *sc) {
     struct rdt_prop *acp = rdt_find_prop(node->parent, "#address-cells");
     struct rdt_prop *scp = rdt_find_prop(node->parent, "#size-cells");
 
@@ -228,12 +236,8 @@ void cpu_setup_interrupts(void) {
     while (mmio_read32(gicr_waker_ptr) & 4)
         ;
 
-    kprint("GICR_WAKER contains 0x%08x\n", mmio_read32(gicr_waker_ptr));
-
     uint64_t icc_pmr;
     asm volatile("mrs %0, icc_pmr_el1" : "=r"(icc_pmr));
-
-    kprint("icc_pmr_el1 initially contains 0x%16lx\n", icc_pmr);
 
     icc_pmr |= 0xff;
 
@@ -242,8 +246,6 @@ void cpu_setup_interrupts(void) {
     uint64_t icc_igrpen1;
 
     asm volatile("mrs %0, icc_igrpen1_el1" : "=r"(icc_igrpen1));
-
-    kprint("icc_igrpen_el1 initially contains 0x%16lx\n", icc_igrpen1);
 
     icc_igrpen1 |= 1;
 
@@ -279,12 +281,8 @@ void setup_interrupts(void) {
     uint64_t gicd_base, gicd_size;
     data = read_reg(data, ac, sc, &gicd_base, &gicd_size);
 
-    kprint("GICD: 0x%lx, 0x%lx\n", gicd_base, gicd_size);
-
     uint64_t gicr_base, gicr_size;
     data = read_reg(data, ac, sc, &gicr_base, &gicr_size);
-
-    kprint("GICR: 0x%lx, 0x%lx\n", gicr_base, gicr_size);
 
     uint64_t gicd_pages = (gicd_size + PAGE_SIZE - 1) / PAGE_SIZE;
     uint64_t gicr_pages = (gicr_size + PAGE_SIZE - 1) / PAGE_SIZE;
@@ -308,6 +306,41 @@ void setup_interrupts(void) {
     unmask_irqs();
 }
 
+void *percpu_copy(void) {
+    extern char __percpu_begin, __percpu_end;
+    uintptr_t percpu_begin = (uintptr_t)&__percpu_begin;
+    uintptr_t percpu_end = (uintptr_t)&__percpu_end;
+    size_t pages =
+        (percpu_end - percpu_begin + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE - 1);
+    void *ptr = kvmalloc(pages, KVMALLOC_PERMANENT);
+
+    extern uintptr_t map_percpu(uintptr_t base);
+    map_percpu((uintptr_t)ptr);
+
+    return ptr;
+}
+
+void *alloc_stack(void) {
+    size_t pages = (KSTACK_SIZE + PAGE_SIZE - 1) / PAGE_SIZE;
+    void *ptr = kvmalloc(pages, KVMALLOC_PERMANENT);
+
+    for (size_t i = 0; i < pages; i++) {
+        uintptr_t reg;
+        int r = global_acquire_pages(1, &reg, NULL);
+        if (r == -1) {
+            KFATAL("Failed to allocate seconary cpu stack.\n");
+        }
+
+        r = vmap((uintptr_t) ptr + i * PAGE_SIZE, reg, PROT_RSYS | PROT_WSYS, MEMORY_TYPE_NORMAL, 0);
+
+        if (r < 0) {
+            KFATAL("Failed to map stack memory.\n");
+        }
+    }
+
+    return ptr + KSTACK_SIZE;
+}
+
 void bring_up_secondary(void) {
     struct rdt_node *cpus_node = rdt_find_node(NULL, "/cpus");
     if (!cpus_node)
@@ -328,7 +361,54 @@ void bring_up_secondary(void) {
         }
     }
 
-    kprint("We're running on cpu %u\n", this_cpu());
+    struct sndry_ctx *ctxs = kmalloc(sizeof(*ctxs) * cpu_count());
+
+    uint64_t ttbr0, ttbr1, tcr;
+    asm volatile(
+            "mrs %0, ttbr0_el1\n"
+            "mrs %1, ttbr1_el1\n"
+            "mrs %2, tcr_el1\n"
+            : "=r"(ttbr0), "=r"(ttbr1), "=r"(tcr));
+
+    void *entry_point;
+    asm volatile("ldr %0, =sndry_enter" : "=r"(entry_point));
+
+    for (cpu_t cpu = 0; cpu < cpu_count(); cpu++) {
+        if (cpu == this_cpu())
+            continue;
+
+        ctxs[cpu].percpu_base = percpu_copy();
+        ctxs[cpu].stack = alloc_stack();
+        ctxs[cpu].ttbr1 = (void *)ttbr1;
+        ctxs[cpu].ttbr0 = (void *)ttbr0;
+        ctxs[cpu].tcr = tcr;
+
+        uint64_t mpidr = get_mpidr(cpu);
+
+        uintptr_t context = get_phys_mapping((uintptr_t)(ctxs + cpu));
+
+        int64_t ret;
+        asm volatile("ldr x0, =0xc4000003\n"
+                     "mov x1, %[mpidr]\n"
+                     "mov x2, %[entry_point]\n"
+                     "mov x3, %[context]\n"
+                     "hvc 0\n"
+                     "mov %[ret], x0"
+
+                     : [ret]"=r"(ret)
+                     : [mpidr] "r"(mpidr), [entry_point] "r"(entry_point),
+                       [context] "r"(context)
+                       : "x0", "x1", "x2", "x3", "memory"
+
+        );
+
+        if (ret < 0) {
+            kprint("Failed to start cpu %u: %ld\n", cpu, ret);
+        }
+    }
+
+    kprint("We're running on cpu %u. We have %u cpus.\n", this_cpu(),
+           cpu_count());
 }
 
 void platform_startup(void) {
@@ -345,23 +425,22 @@ void platform_startup(void) {
     }
 
     uint32_t total_size = FROM_BE_32(header->totalsize);
-    kprint("Total size: %u\n", total_size);
 
     uint32_t total_pages = total_size / PAGE_SIZE;
-    kprint("Total pages: %u\n", total_pages);
 
     vumap((uintptr_t)header);
     kvfree(header);
 
     // Now remap the full thing.
 
-    // TODO: Make sure that we reserve the memory the fdt is occupying, otherwise our physical
-    // memory allocator might allocate it.
+    // TODO: Make sure that we reserve the memory the fdt is occupying,
+    // otherwise our physical memory allocator might allocate it.
     fdt_header = kvmalloc(total_pages, KVMALLOC_PERMANENT);
 
     for (uint32_t i = 0; i < total_pages; i++) {
-        vmap((uintptr_t)fdt_header + i * PAGE_SIZE, (uintptr_t)fdt_header_phys + i * PAGE_SIZE,
-             PROT_RSYS, MEMORY_TYPE_NON_CACHEABLE, 0);
+        vmap((uintptr_t)fdt_header + i * PAGE_SIZE,
+             (uintptr_t)fdt_header_phys + i * PAGE_SIZE, PROT_RSYS,
+             MEMORY_TYPE_NON_CACHEABLE, 0);
     }
 
     build_rdt();

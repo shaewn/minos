@@ -32,5 +32,5 @@ sndry_enter:
 
     .text
 sndry_virt_up:
-    bl kvmain2
+    bl secondary_main
     b .

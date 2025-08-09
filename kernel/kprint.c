@@ -286,13 +286,3 @@ void kprint(const char *format, ...) {
 
     va_end(list);
 }
-
-void enable_simd(void) {
-    uint64_t cpacr;
-    // See D24.2.33 of the A-profile reference manual (page 7376 in my version)
-    asm volatile("mrs %0, cpacr_el1" : "=r"(cpacr));
-    cpacr |= 3 << 20;
-    asm volatile("msr cpacr_el1, %0" : : "r"(cpacr));
-}
-
-void init_print(void) { enable_simd(); }

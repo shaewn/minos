@@ -4,7 +4,7 @@
 #include "memory.h"
 #include "pltfrm.h"
 
-bspinlock_t output_lock;
+volatile bspinlock_t output_lock;
 
 static void uart_putchar(char ch) {
     *(volatile int *) UART_ADDR = (unsigned int)ch;

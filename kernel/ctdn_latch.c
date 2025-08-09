@@ -1,0 +1,17 @@
+#include "ctdn_latch.h"
+#include "cpu.h"
+
+void ctdn_latch_set(ctdn_latch_t *latch, uint32_t value) {
+    __atomic_store_n(latch, value, __ATOMIC_RELEASE);
+    cpu_signal_all();
+}
+
+void ctdn_latch_signal(ctdn_latch_t *latch) {
+    __atomic_fetch_sub(latch, 1, __ATOMIC_RELEASE);
+    cpu_signal_all();
+}
+
+void ctdn_latch_wait(ctdn_latch_t *latch) {
+    while (__atomic_load_n(latch, __ATOMIC_ACQUIRE) != 0)
+        cpu_idle_wait();
+}

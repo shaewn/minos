@@ -121,6 +121,8 @@ static int create_new_table(uint64_t *descriptor) {
     return 0;
 }
 
+bool tlb_shootdowns_enabled;
+
 int vmap(uintptr_t va, uintptr_t pa, uint64_t prot, memory_type_t memory_type, int flags) {
     int hwprot = gethwprot(prot);
 

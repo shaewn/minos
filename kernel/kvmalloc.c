@@ -13,7 +13,7 @@
 static uintptr_t heap_start, heap_end;
 static uintptr_t heap_meta_start, heap_meta_current;
 static uintptr_t pheap;
-static bspinlock_t vmalloc_lock;
+static volatile bspinlock_t vmalloc_lock;
 static struct rb_node *root_node;
 
 // TODO: Abstract this nonsense into an rbt user.

@@ -3,7 +3,7 @@
 #include "bspinlock.h"
 
 static gpa_t default_allocator = GPA_DEF_INIT;
-static bspinlock_t lock;
+static volatile bspinlock_t lock;
 
 void *kmalloc2(size_t size, int flags) {
     bspinlock_lock(&lock);

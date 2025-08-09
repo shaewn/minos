@@ -12,7 +12,7 @@ cpu_t assign_cpu_id(uint64_t mpidr) {
 
 cpu_t get_cpu_id(uint64_t mpidr) {
     uint32_t affinities = get_affinities(mpidr);
-    for (uint32_t i = 0; i < MAX_CPUS; i++) {
+    for (uint32_t i = 0; i < current_index; i++) {
         if (get_affinities(mpidr_table[i]) == affinities)
             return i;
     }

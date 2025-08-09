@@ -58,7 +58,7 @@ struct buddy_data {
 #define BUDDY_ORDER_GET_DATA(order) ((struct buddy_data *)((char *)(order) + (order)->data_offset))
 struct buddy_allocator {
     intptr_t heap_data_offset;
-    bspinlock_t lock;
+    volatile bspinlock_t lock;
     uint64_t num_orders;
     struct buddy_order {
         uint64_t num_blocks;

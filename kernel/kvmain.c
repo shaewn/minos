@@ -45,7 +45,8 @@ uintptr_t map_percpu(uintptr_t va_start) {
 
 // Kernel virtual entry point (higher half)
 void kvmain(uintptr_t vbrk) {
-    init_print();
+    void platform_basic_init(void);
+    platform_basic_init();
 
     reserve_active_kernel_memory();
 
@@ -57,9 +58,4 @@ void kvmain(uintptr_t vbrk) {
 
     void platform_startup(void);
     platform_startup();
-}
-
-void kvmain2(void) {
-    init_print();
-    kprint("Hello, world (%u)\n", this_cpu());
 }

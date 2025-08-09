@@ -1,4 +1,5 @@
 LD := aarch64-linux-gnu-ld
+LD_FLAGS := --sysroot=/usr/aarch64-linux-gnu
 
 AS := aarch64-linux-gnu-as
 AFLAGS := -I.
@@ -30,7 +31,7 @@ clean:
 	fi
 
 kernel.elf: $(OBJECTS) linker_script.ld
-	$(LD) -o $@ -T linker_script.ld $(OBJECTS)
+	$(LD) -o $@ -T linker_script.ld $(OBJECTS) $(LD_FLAGS)
 
 $(INIT_OBJECTS): %.o: %.c
 	$(CC) -c $(CFLAGS) $(CFLAGS_INIT) -o $@ $<

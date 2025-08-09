@@ -7,7 +7,7 @@
 PERCPU_INIT LIST_HEAD(__pcpu_private_driver_list);
 #define private_driver_list GET_PERCPU(__pcpu_private_driver_list)
 
-bspinlock_t global_driver_lock;
+volatile bspinlock_t global_driver_lock;
 LIST_HEAD(global_driver_list);
 
 static void setup_driver(struct driver *driver) {

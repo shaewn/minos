@@ -2,6 +2,7 @@
 #include "arch/aarch64/cpu_id.h"
 #include "config.h"
 #include "cpu.h"
+#include "ctdn_latch.h"
 #include "die.h"
 #include "driver.h"
 #include "fdt.h"
@@ -250,6 +251,8 @@ void cpu_setup_interrupts(void) {
     icc_igrpen1 |= 1;
 
     asm volatile("msr icc_igrpen1_el1, %0" ::"r"(icc_igrpen1));
+
+    asm volatile("isb");
 }
 
 void setup_interrupts(void) {
@@ -341,6 +344,8 @@ void *alloc_stack(void) {
     return ptr + KSTACK_SIZE;
 }
 
+ctdn_latch_t startup_latch;
+
 void bring_up_secondary(void) {
     struct rdt_node *cpus_node = rdt_find_node(NULL, "/cpus");
     if (!cpus_node)
@@ -372,6 +377,8 @@ void bring_up_secondary(void) {
 
     void *entry_point;
     asm volatile("ldr %0, =sndry_enter" : "=r"(entry_point));
+
+    ctdn_latch_set(&startup_latch, cpu_count());
 
     for (cpu_t cpu = 0; cpu < cpu_count(); cpu++) {
         if (cpu == this_cpu())
@@ -407,7 +414,10 @@ void bring_up_secondary(void) {
         }
     }
 
-    kprint("We're running on cpu %u. We have %u cpus.\n", this_cpu(),
+    ctdn_latch_signal(&startup_latch);
+    ctdn_latch_wait(&startup_latch);
+
+    kprint("The primary cpu is %u. We have %u cpus.\n", this_cpu(),
            cpu_count());
 }
 
@@ -444,8 +454,21 @@ void platform_startup(void) {
     }
 
     build_rdt();
-    print_rdt();
+    // print_rdt();
 
     setup_interrupts();
     bring_up_secondary();
+}
+
+void platform_basic_init();
+
+void secondary_main(void) {
+    platform_basic_init();
+    kprint("Hello, world! (%u)\n", this_cpu());
+
+    ctdn_latch_signal(&startup_latch);
+}
+
+void platform_basic_init(void) {
+    asm volatile("msr cpacr_el1, %x0" :: "r"(0x23330000));
 }

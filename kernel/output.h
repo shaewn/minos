@@ -14,8 +14,6 @@ void kputu(uintmax_t u, int radix);
 void kputstr_nolock(const char *s);
 void kputu_nolock(uintmax_t u, int radix);
 
-void init_print(void);
-
 void kprintv_nolock(const char *s, va_list list);
 void kprint_nolock(const char *s, ...);
 

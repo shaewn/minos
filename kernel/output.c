@@ -1,10 +1,10 @@
 #include "output.h"
 
-#include "bspinlock.h"
+#include "spinlock.h"
 #include "memory.h"
 #include "pltfrm.h"
 
-volatile bspinlock_t output_lock;
+volatile spinlock_t output_lock;
 
 static void uart_putchar(char ch) {
     *(volatile int *) UART_ADDR = (unsigned int)ch;
@@ -12,9 +12,9 @@ static void uart_putchar(char ch) {
 
 void klockout(int locked) {
     if (locked) {
-        bspinlock_lock(&output_lock);
+        spin_lock_irq_save(&output_lock);
     } else {
-        bspinlock_unlock(&output_lock);
+        spin_unlock_irq_restore(&output_lock);
     }
 }
 

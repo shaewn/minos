@@ -13,10 +13,11 @@ typedef uint32_t cpu_t;
 
 #define CPU_INVALID ((cpu_t)-1)
 
-typedef struct bspinlock {
+typedef struct spinlock {
     uint8_t flag;
+    bool masked_val;
     cpu_t holder;
-} bspinlock_t;
+} spinlock_t;
 
 struct page {
     uintptr_t addr;
@@ -58,7 +59,7 @@ struct buddy_data {
 #define BUDDY_ORDER_GET_DATA(order) ((struct buddy_data *)((char *)(order) + (order)->data_offset))
 struct buddy_allocator {
     intptr_t heap_data_offset;
-    volatile bspinlock_t lock;
+    volatile spinlock_t lock;
     uint64_t num_orders;
     struct buddy_order {
         uint64_t num_blocks;

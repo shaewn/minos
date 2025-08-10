@@ -3,15 +3,19 @@
 
 #include "types.h"
 
-typedef uint32_t intid_t;
-
 #define INTID_INVALID ((intid_t)-1)
+#define IH_NO_HANDLER ((interrupt_handler_t)0)
+
+typedef uint32_t intid_t;
 
 typedef void (*interrupt_handler_t)(intid_t intid, void *context);
 
-#define IH_NO_HANDLER ((interrupt_handler_t)0)
-
 typedef uint64_t handler_id_t;
+
+struct sgi_data {
+    void *payload;
+    cpu_t sender;
+};
 
 // for SGIs or PPIs
 // to remove a handler, pass IH_NO_HANDLER as handler.
@@ -39,6 +43,12 @@ void irq_disable_private(intid_t intid);
 
 void irq_enable_shared(intid_t intid, bool level_sensitive);
 void irq_disable_shared(intid_t intid);
+
+// 0 on success, -1 on failure.
+int accept_sgi(intid_t intid, struct sgi_data *data_buf);
+int end_sgi(intid_t intid);
+
+void send_all_sgi(intid_t intid, void *payload);
 
 // TODO:
 // void irq_route_shared(intid_t intid, cpu_mask_t cpu_mask);

@@ -14,6 +14,7 @@ struct sndry_ctx {
 
     /* register values */
     uint64_t tcr;
+    uint64_t mair;
 };
 
 #endif

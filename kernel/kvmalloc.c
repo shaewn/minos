@@ -1,5 +1,5 @@
 #include "kvmalloc.h"
-#include "bspinlock.h"
+#include "spinlock.h"
 #include "die.h"
 #include "macros.h"
 #include "memory.h"
@@ -13,7 +13,7 @@
 static uintptr_t heap_start, heap_end;
 static uintptr_t heap_meta_start, heap_meta_current;
 static uintptr_t pheap;
-static volatile bspinlock_t vmalloc_lock;
+static volatile spinlock_t vmalloc_lock;
 static struct rb_node *root_node;
 
 // TODO: Abstract this nonsense into an rbt user.
@@ -247,7 +247,7 @@ void kvmalloc_init(void) {
 }
 
 void *kvmalloc(size_t pages, int flags) {
-    bspinlock_lock(&vmalloc_lock);
+    spin_lock_irq_save(&vmalloc_lock);
     void *ret;
     if (!(flags & KVMALLOC_PERMANENT)) {
         ret = request_pages(pages);
@@ -256,14 +256,14 @@ void *kvmalloc(size_t pages, int flags) {
         pheap += pages * PAGE_SIZE;
     }
 
-    bspinlock_unlock(&vmalloc_lock);
+    spin_unlock_irq_restore(&vmalloc_lock);
     return ret;
 }
 
 void kvfree(void *ptr) {
-    bspinlock_lock(&vmalloc_lock);
+    spin_lock_irq_save(&vmalloc_lock);
 
     return_pages((uintptr_t) ptr);
 
-    bspinlock_unlock(&vmalloc_lock);
+    spin_unlock_irq_restore(&vmalloc_lock);
 }

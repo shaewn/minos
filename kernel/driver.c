@@ -1,5 +1,5 @@
 #include "driver.h"
-#include "bspinlock.h"
+#include "spinlock.h"
 #include "cpu.h"
 #include "kmalloc.h"
 #include "memory.h"
@@ -7,7 +7,7 @@
 PERCPU_INIT LIST_HEAD(__pcpu_private_driver_list);
 #define private_driver_list GET_PERCPU(__pcpu_private_driver_list)
 
-volatile bspinlock_t global_driver_lock;
+volatile spinlock_t global_driver_lock;
 LIST_HEAD(global_driver_list);
 
 static void setup_driver(struct driver *driver) {
@@ -36,9 +36,9 @@ driver_id_t register_private_driver(struct driver *in_driver) {
 
 driver_id_t register_global_driver(struct driver *in_driver) {
     struct driver *driver = dup_driver(in_driver, kmalloc(sizeof(*in_driver)));
-    bspinlock_lock(&global_driver_lock);
+    spin_lock_irq_save(&global_driver_lock);
     list_add_tail(&driver->__node, &global_driver_list);
-    bspinlock_unlock(&global_driver_lock);
+    spin_unlock_irq_restore(&global_driver_lock);
 
     setup_driver(driver);
     return driver->__id;
@@ -54,7 +54,7 @@ void unregister_driver(driver_id_t id) {
 }
 
 static void unregister_interrupts(struct driver *driver) {
-    for (uint32_t i = 0; i < DRIVER_MAX_INTERRUPTS; i++) {
+    for (uint32_t i = 0; i < driver->num_interrupts; i++) {
         intid_t intid = driver->interrupts[i];
         if (intid != INTID_INVALID) {
             if (is_private_interrupt(intid)) {
@@ -73,7 +73,7 @@ static void driver_interrupt_handler(intid_t intid, void *driver_ptr) {
 }
 
 static void register_interrupts(struct driver *driver) {
-    for (uint32_t i = 0; i < DRIVER_MAX_INTERRUPTS; i++) {
+    for (uint32_t i = 0; i < driver->num_interrupts; i++) {
         intid_t intid = driver->interrupts[i];
         if (intid != INTID_INVALID) {
             if (is_private_interrupt(intid)) {

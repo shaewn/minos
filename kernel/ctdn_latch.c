@@ -6,9 +6,13 @@ void ctdn_latch_set(ctdn_latch_t *latch, uint32_t value) {
     cpu_signal_all();
 }
 
-void ctdn_latch_signal(ctdn_latch_t *latch) {
+void ctdn_latch_decrement(ctdn_latch_t *latch) {
     __atomic_fetch_sub(latch, 1, __ATOMIC_RELEASE);
     cpu_signal_all();
+}
+
+void ctdn_latch_increment(ctdn_latch_t *latch) {
+    __atomic_fetch_add(latch, 1, __ATOMIC_RELAXED);
 }
 
 void ctdn_latch_wait(ctdn_latch_t *latch) {

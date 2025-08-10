@@ -5,12 +5,13 @@
 #include "list.h"
 
 #define DRIVER_NAME_MAX 128
-#define DRIVER_MAX_INTERRUPTS 16
+#define DRIVER_MAX_INTERRUPTS 17
 
 typedef uint64_t driver_id_t;
 
 struct driver {
     char name[DRIVER_NAME_MAX];
+    uint32_t num_interrupts;
     intid_t interrupts[DRIVER_MAX_INTERRUPTS];
     void *context;
 

@@ -21,6 +21,6 @@ int vumap_range(uintptr_t start_va, size_t pages);
 
 uintptr_t get_phys_mapping(uintptr_t va);
 
-void enable_tlb_shootdowns(void);
+void enable_global_tlb_invalidate(void);
 
 #endif

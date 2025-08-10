@@ -5,8 +5,22 @@
 static uint64_t mpidr_table[MAX_CPUS];
 static uint32_t current_index;
 
+// stores aff3, aff2, aff1 in the least significant 24 bits of the entry.
+// terminated by a -1 entry.
+static int32_t routes_table[MAX_CPUS] = {-1};
+
 cpu_t assign_cpu_id(uint64_t mpidr) {
     mpidr_table[current_index] = mpidr;
+
+    int32_t route = get_affinities(mpidr) >> 8;
+    uint32_t index = 0;
+    while (routes_table[index] != route && routes_table[index] != -1) index++;
+
+    if (routes_table[index] != route) {
+        routes_table[index] = route;
+        routes_table[index + 1] = -1;
+    }
+
     return current_index++;
 }
 

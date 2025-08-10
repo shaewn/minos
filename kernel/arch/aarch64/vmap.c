@@ -1,3 +1,4 @@
+#include "interrupts.h"
 #include "memory.h"
 #include "macros.h"
 #include "./tt.h"
@@ -121,9 +122,10 @@ static int create_new_table(uint64_t *descriptor) {
     return 0;
 }
 
-bool tlb_shootdowns_enabled;
-
 int vmap(uintptr_t va, uintptr_t pa, uint64_t prot, memory_type_t memory_type, int flags) {
+    va &= ~(uintptr_t)(PAGE_SIZE - 1);
+    pa &= ~(uintptr_t)(PAGE_SIZE - 1);
+
     int hwprot = gethwprot(prot);
 
     if (hwprot == -1) {

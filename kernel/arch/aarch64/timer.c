@@ -43,6 +43,10 @@ uint32_t timer_get_counter(void) {
     return cntp_tval_el0_read() & 0xffffffff;
 }
 
+bool timer_check_cond(void) {
+    return (cntp_ctl_el0_read() >> 2) & 1;
+}
+
 uint32_t timer_gethz(void) {
     uint64_t cntfrq;
     asm volatile("mrs %0, cntfrq_el0" : "=r"(cntfrq));

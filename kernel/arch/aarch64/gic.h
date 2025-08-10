@@ -5,7 +5,8 @@
 #define GICD_TYPER 0x0004
 #define GICD_STATUSR 0x0010
 #define GICD_SETSPI_NSR 0x0040
-#define GICD_CLRSPI_NSR 0X0048
+#define GICD_CLRSPI_NSR 0x0048
+#define GICD_SGIR 0x0F00
 
 // Offset from RD_base
 #define GICR_CTLR 0x0000

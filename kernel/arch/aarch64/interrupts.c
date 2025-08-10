@@ -1,12 +1,33 @@
 #include "interrupts.h"
 #include "../../pltfrm.h"
-#include "bspinlock.h"
+#include "arch/aarch64/cpu_id.h"
+#include "spinlock.h"
+#include "config.h"
 #include "cpu.h"
+#include "gic.h"
 #include "kmalloc.h"
 #include "list.h"
 #include "macros.h"
 #include "memory.h"
-#include "gic.h"
+#include "output.h"
+
+#define NUM_SPIS (1019 - 32 + 1)
+#define NUM_ESPIS (5119 - 4096 + 1)
+#define NUM_GLOBAL_HANDLERS (NUM_SPIS + NUM_ESPIS)
+
+#define NUM_SGIS 16
+#define NUM_SGIS_AND_PPIS 32
+#define NUM_EPPIS (1119 - 1056 + 1)
+#define NUM_PRIVATE_HANDLERS (NUM_SGIS_AND_PPIS + NUM_EPPIS)
+
+#define MAILBOX_STATE_IDLE 0
+#define MAILBOX_STATE_WRITE 1
+#define MAILBOX_STATE_AWAIT_READ 2
+#define MAILBOX_STATE_READ 3
+
+#define private_handlers GET_PERCPU(__pcpu_private_handlers)
+
+uintptr_t gicd_base_ptr, gicr_base_ptr;
 
 struct global_handler {
     struct list_head node;
@@ -15,10 +36,18 @@ struct global_handler {
     uint64_t identifier;
 };
 
-#define NUM_SPIS (1019 - 32 + 1)
-#define NUM_ESPIS (5119 - 4096 + 1)
-#define NUM_GLOBAL_HANDLERS (NUM_SPIS + NUM_ESPIS)
-static bspinlock_t global_handler_lists_lock;
+struct sgi_mailbox {
+    struct sgi_data data;
+    uint32_t state;
+};
+
+struct sgi_mailboxes {
+    struct sgi_mailbox per_interrupt[NUM_SGIS];
+};
+
+volatile struct sgi_mailboxes per_core_mailboxes[MAX_CPUS];
+
+static volatile spinlock_t global_handler_lists_lock;
 static struct list_head global_handler_lists[NUM_GLOBAL_HANDLERS];
 
 struct handler {
@@ -26,10 +55,6 @@ struct handler {
     void *context;
 };
 
-#define NUM_SGIS_AND_PPIS 32
-#define NUM_EPPIS (1119 - 1056 + 1)
-#define NUM_PRIVATE_HANDLERS (NUM_SGIS_AND_PPIS + NUM_EPPIS)
-#define private_handlers GET_PERCPU(__pcpu_private_handlers)
 static PERCPU_UNINIT struct handler __pcpu_private_handlers[NUM_PRIVATE_HANDLERS];
 
 // private per-cpu.
@@ -69,12 +94,13 @@ void establish_private_handler(intid_t intid, interrupt_handler_t handler, void 
         return;
     }
 
-    struct handler * h = get_private_handler(intid);
+    struct handler *h = get_private_handler(intid);
     h->ih = handler;
     h->context = context;
 }
 
-void establish_global_handler(intid_t intid, interrupt_handler_t handler, handler_id_t identifier, void *context) {
+void establish_global_handler(intid_t intid, interrupt_handler_t handler, handler_id_t identifier,
+                              void *context) {
     if (!is_global_interrupt(intid)) {
         return;
     }
@@ -88,13 +114,13 @@ void establish_global_handler(intid_t intid, interrupt_handler_t handler, handle
     // it would also try to obtain the lock, causing a deadlock.
     int val = irqs_masked();
     mask_irqs();
-    bspinlock_lock(&global_handler_lists_lock);
+    spin_lock_irq_save(&global_handler_lists_lock);
 
     struct list_head *list = get_global_handler_list(intid);
 
     list_add_tail(&ghandler->node, list);
 
-    bspinlock_unlock(&global_handler_lists_lock);
+    spin_unlock_irq_restore(&global_handler_lists_lock);
     restore_irq_mask(val);
 }
 
@@ -104,7 +130,7 @@ void deestablish_global_handler(intid_t intid, handler_id_t identifier) {
 
     int val = irqs_masked();
     mask_irqs();
-    bspinlock_lock(&global_handler_lists_lock);
+    spin_lock_irq_save(&global_handler_lists_lock);
 
     struct list_head *list = get_global_handler_list(intid);
     LIST_FOREACH(list, node) {
@@ -115,7 +141,7 @@ void deestablish_global_handler(intid_t intid, handler_id_t identifier) {
         }
     }
 
-    bspinlock_unlock(&global_handler_lists_lock);
+    spin_unlock_irq_restore(&global_handler_lists_lock);
     restore_irq_mask(val);
 }
 
@@ -127,7 +153,7 @@ void dispatch_irq(intid_t intid) {
             h->ih(intid, h->context);
         }
     } else if (is_global_interrupt(intid)) {
-        bspinlock_lock(&global_handler_lists_lock);
+        spin_lock_irq_save(&global_handler_lists_lock);
 
         struct list_head *list = get_global_handler_list(intid);
 
@@ -136,7 +162,7 @@ void dispatch_irq(intid_t intid) {
             handler->handler(intid, handler->context);
         }
 
-        bspinlock_unlock(&global_handler_lists_lock);
+        spin_unlock_irq_restore(&global_handler_lists_lock);
     }
 }
 
@@ -237,9 +263,70 @@ void irq_enable_private(intid_t intid, bool level_sensitive) {
     set_group_sgi_or_ppi(intid, 1);
 }
 
-void irq_disable_private(intid_t intid) {
-    set_enabled_sgi_or_ppi(intid, false);
-}
+void irq_disable_private(intid_t intid) { set_enabled_sgi_or_ppi(intid, false); }
 
 void irq_enable_shared(intid_t intid, bool level_sensitive);
 void irq_disable_shared(intid_t intid);
+
+static void swap_state(volatile struct sgi_mailbox *mailbox, uint32_t from_state,
+                       uint32_t to_state) {
+    uint32_t expected;
+
+    while (1) {
+        while (__atomic_load_n(&mailbox->state, __ATOMIC_RELAXED) != MAILBOX_STATE_IDLE)
+            cpu_idle_wait();
+
+        expected = from_state;
+        if (__atomic_compare_exchange_n(&mailbox->state, &expected, to_state, false,
+                                        __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+            break;
+    }
+}
+
+int accept_sgi(intid_t intid, struct sgi_data *data_buf) {
+    intid &= 0xf;
+
+    volatile struct sgi_mailbox *mailbox = &per_core_mailboxes[this_cpu()].per_interrupt[intid];
+    uint32_t expected = MAILBOX_STATE_AWAIT_READ;
+    if (!__atomic_compare_exchange_n(&mailbox->state, &expected, MAILBOX_STATE_READ, false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+        return -1;
+    }
+
+    data_buf->payload = mailbox->data.payload;
+    data_buf->sender = mailbox->data.sender;
+
+    return 0;
+}
+
+int end_sgi(intid_t intid) {
+    intid &= 0xff;
+
+    volatile struct sgi_mailbox *mailbox = &per_core_mailboxes[this_cpu()].per_interrupt[intid];
+    uint32_t expected = MAILBOX_STATE_READ;
+    if (!__atomic_compare_exchange_n(&mailbox->state, &expected, MAILBOX_STATE_IDLE, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+        return -1;
+    }
+
+    return 0;
+}
+
+void send_all_sgi(intid_t intid, void *payload) {
+    intid &= 0xf;
+    cpu_t current = this_cpu();
+
+    for (cpu_t cpu = 0; cpu < cpu_count(); cpu++) {
+        if (cpu == current) {
+            continue;
+        }
+
+        volatile struct sgi_mailbox *mailbox = &per_core_mailboxes[cpu].per_interrupt[intid];
+        swap_state(mailbox, MAILBOX_STATE_IDLE, MAILBOX_STATE_WRITE);
+
+        mailbox->data.payload = payload;
+        mailbox->data.sender = current;
+
+        __atomic_store_n(&mailbox->state, MAILBOX_STATE_AWAIT_READ, __ATOMIC_RELEASE);
+    }
+
+    asm volatile("msr icc_sgi1r_el1, %0" ::"r"(0x0000010000000000 | intid << 24));
+}

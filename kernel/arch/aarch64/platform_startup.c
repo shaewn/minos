@@ -26,7 +26,7 @@
 extern struct fdt_header *fdt_header_phys;
 struct fdt_header *fdt_header;
 
-uintptr_t gicd_base_ptr, gicr_base_ptr;
+extern uintptr_t gicd_base_ptr, gicr_base_ptr;
 
 PERCPU_UNINIT uintptr_t __pcpu_RD_base;
 #define RD_base GET_PERCPU(__pcpu_RD_base)
@@ -45,8 +45,9 @@ static uint32_t get_affinity_value(void) {
 }
 
 uintptr_t get_rd_base(void) {
-    if (RD_base != 0)
+    if (RD_base != 0) {
         return RD_base;
+    }
 
     uintptr_t rd_base = gicr_base_ptr;
 
@@ -115,8 +116,8 @@ struct rdt_node *find_primary_interrupt_controller(void) {
     return NULL;
 }
 
-static const uint32_t *read_reg(const uint32_t *wp, uint32_t ac, uint32_t sc,
-                                uint64_t *addr, uint64_t *size) {
+static const uint32_t *read_reg(const uint32_t *wp, uint32_t ac, uint32_t sc, uint64_t *addr,
+                                uint64_t *size) {
     if (ac && addr) {
         *addr = FROM_BE_32(*wp++);
         if (ac == 2) {
@@ -162,13 +163,7 @@ static PERCPU_UNINIT struct timer_context {
 
 static void timer_handler(void *ctx, intid_t intid) {
     struct timer_context *tctx = ctx;
-    kprint("Timer!");
-
-    if (tctx->count) {
-        kprint(" (%u)\n", tctx->count);
-    } else {
-        kputstr("\n");
-    }
+    kprint("[%u] Timer! (on cpu %u)\n", tctx->count, this_cpu());
 
     ++tctx->count;
 
@@ -176,17 +171,13 @@ static void timer_handler(void *ctx, intid_t intid) {
     end_intid(intid);
 }
 
-static void timer_on_enable(void *context) {
-    irq_enable_private(TIMER_INTID(), true);
-}
+static void timer_on_enable(void *context) { irq_enable_private(TIMER_INTID(), true); }
 
-static void timer_on_disable(void *context) {
-    irq_disable_private(TIMER_INTID());
-}
+static void timer_on_disable(void *context) { irq_disable_private(TIMER_INTID()); }
 
-static PERCPU_INIT struct driver timer_driver = {
-    "Generic Timer",  {30},         NULL, NULL, NULL, timer_on_enable,
-    timer_on_disable, timer_handler};
+#define timer_driver GET_PERCPU(__pcpu_timer_driver)
+static PERCPU_INIT struct driver __pcpu_timer_driver = {
+    "Generic Timer", 1, {30}, NULL, NULL, NULL, timer_on_enable, timer_on_disable, timer_handler};
 
 void setup_timer(void) {
     uint32_t freq_hz = timer_gethz();
@@ -197,12 +188,11 @@ void setup_timer(void) {
     timer_set_counter(TIME_SLICE());
     timer_enable();
 
-    while (1)
-        ;
+    while (1) {
+    }
 }
 
-static void find_parent_ac_sc(struct rdt_node *node, uint32_t *ac,
-                              uint32_t *sc) {
+static void find_parent_ac_sc(struct rdt_node *node, uint32_t *ac, uint32_t *sc) {
     struct rdt_prop *acp = rdt_find_prop(node->parent, "#address-cells");
     struct rdt_prop *scp = rdt_find_prop(node->parent, "#size-cells");
 
@@ -251,6 +241,8 @@ void cpu_setup_interrupts(void) {
     icc_igrpen1 |= 1;
 
     asm volatile("msr icc_igrpen1_el1, %0" ::"r"(icc_igrpen1));
+
+    unmask_irqs();
 
     asm volatile("isb");
 }
@@ -305,16 +297,13 @@ void setup_interrupts(void) {
     uintptr_t gicd_ctlr = gicd_base_ptr + GICD_CTLR;
     mmio_write32(gicd_ctlr, mmio_read32(gicd_ctlr) | /* Enable bit */ 0x2);
     dsb_isb();
-
-    unmask_irqs();
 }
 
 void *percpu_copy(void) {
     extern char __percpu_begin, __percpu_end;
     uintptr_t percpu_begin = (uintptr_t)&__percpu_begin;
     uintptr_t percpu_end = (uintptr_t)&__percpu_end;
-    size_t pages =
-        (percpu_end - percpu_begin + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE - 1);
+    size_t pages = (percpu_end - percpu_begin + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE - 1);
     void *ptr = kvmalloc(pages, KVMALLOC_PERMANENT);
 
     extern uintptr_t map_percpu(uintptr_t base);
@@ -334,7 +323,7 @@ void *alloc_stack(void) {
             KFATAL("Failed to allocate seconary cpu stack.\n");
         }
 
-        r = vmap((uintptr_t) ptr + i * PAGE_SIZE, reg, PROT_RSYS | PROT_WSYS, MEMORY_TYPE_NORMAL, 0);
+        r = vmap((uintptr_t)ptr + i * PAGE_SIZE, reg, PROT_RSYS | PROT_WSYS, MEMORY_TYPE_NORMAL, 0);
 
         if (r < 0) {
             KFATAL("Failed to map stack memory.\n");
@@ -368,12 +357,12 @@ void bring_up_secondary(void) {
 
     struct sndry_ctx *ctxs = kmalloc(sizeof(*ctxs) * cpu_count());
 
-    uint64_t ttbr0, ttbr1, tcr;
-    asm volatile(
-            "mrs %0, ttbr0_el1\n"
-            "mrs %1, ttbr1_el1\n"
-            "mrs %2, tcr_el1\n"
-            : "=r"(ttbr0), "=r"(ttbr1), "=r"(tcr));
+    uint64_t ttbr0, ttbr1, tcr, mair;
+    asm volatile("mrs %0, ttbr0_el1\n"
+                 "mrs %1, ttbr1_el1\n"
+                 "mrs %2, tcr_el1\n"
+                 "mrs %3, mair_el1\n"
+                 : "=r"(ttbr0), "=r"(ttbr1), "=r"(tcr), "=r"(mair));
 
     void *entry_point;
     asm volatile("ldr %0, =sndry_enter" : "=r"(entry_point));
@@ -381,14 +370,17 @@ void bring_up_secondary(void) {
     ctdn_latch_set(&startup_latch, cpu_count());
 
     for (cpu_t cpu = 0; cpu < cpu_count(); cpu++) {
-        if (cpu == this_cpu())
-            continue;
-
         ctxs[cpu].percpu_base = percpu_copy();
         ctxs[cpu].stack = alloc_stack();
         ctxs[cpu].ttbr1 = (void *)ttbr1;
         ctxs[cpu].ttbr0 = (void *)ttbr0;
         ctxs[cpu].tcr = tcr;
+        ctxs[cpu].mair = mair;
+    }
+
+    for (cpu_t cpu = 0; cpu < cpu_count(); cpu++) {
+        if (cpu == this_cpu())
+            continue;
 
         uint64_t mpidr = get_mpidr(cpu);
 
@@ -402,11 +394,9 @@ void bring_up_secondary(void) {
                      "hvc 0\n"
                      "mov %[ret], x0"
 
-                     : [ret]"=r"(ret)
-                     : [mpidr] "r"(mpidr), [entry_point] "r"(entry_point),
-                       [context] "r"(context)
-                       : "x0", "x1", "x2", "x3", "memory"
-
+                     : [ret] "=r"(ret)
+                     : [mpidr] "r"(mpidr), [entry_point] "r"(entry_point), [context] "r"(context)
+                     : "x0", "x1", "x2", "x3", "memory"
         );
 
         if (ret < 0) {
@@ -414,11 +404,13 @@ void bring_up_secondary(void) {
         }
     }
 
-    ctdn_latch_signal(&startup_latch);
+    // WARNING: No new virtual memory mappings until this wait has completed.
+    ctdn_latch_decrement(&startup_latch);
     ctdn_latch_wait(&startup_latch);
 
-    kprint("The primary cpu is %u. We have %u cpus.\n", this_cpu(),
-           cpu_count());
+    kfree(ctxs);
+
+    kprint("The primary cpu is %u. We have %u cpus.\n", this_cpu(), cpu_count());
 }
 
 void platform_startup(void) {
@@ -448,9 +440,8 @@ void platform_startup(void) {
     fdt_header = kvmalloc(total_pages, KVMALLOC_PERMANENT);
 
     for (uint32_t i = 0; i < total_pages; i++) {
-        vmap((uintptr_t)fdt_header + i * PAGE_SIZE,
-             (uintptr_t)fdt_header_phys + i * PAGE_SIZE, PROT_RSYS,
-             MEMORY_TYPE_NON_CACHEABLE, 0);
+        vmap((uintptr_t)fdt_header + i * PAGE_SIZE, (uintptr_t)fdt_header_phys + i * PAGE_SIZE,
+             PROT_RSYS, MEMORY_TYPE_NON_CACHEABLE, 0);
     }
 
     build_rdt();
@@ -462,13 +453,15 @@ void platform_startup(void) {
 
 void platform_basic_init();
 
-void secondary_main(void) {
+void secondary_main(void *pcpu_start) {
     platform_basic_init();
+    set_percpu_start(pcpu_start);
+
     kprint("Hello, world! (%u)\n", this_cpu());
 
-    ctdn_latch_signal(&startup_latch);
+    cpu_setup_interrupts();
+
+    ctdn_latch_decrement(&startup_latch);
 }
 
-void platform_basic_init(void) {
-    asm volatile("msr cpacr_el1, %x0" :: "r"(0x23330000));
-}
+void platform_basic_init(void) { asm volatile("msr cpacr_el1, %x0" ::"r"(0x23330000)); }

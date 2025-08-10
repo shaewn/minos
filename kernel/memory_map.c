@@ -1,5 +1,5 @@
 #include "memory_map.h"
-#include "bspinlock.h"
+#include "spinlock.h"
 #include "buddy_util.h"
 #include "die.h"
 #include "macros.h"
@@ -12,7 +12,7 @@ char *memory_map_phys_start, *memory_map_phys_end;
 /* in virtual addresss pace */
 char *memory_map_addr_start, *memory_map_addr_end;
 
-bspinlock_t mm_lock;
+spinlock_t mm_lock;
 
 static int ranges_overlap(uintptr_t a_start, uintptr_t a_end, uintptr_t b_start, uintptr_t b_end);
 
@@ -265,7 +265,7 @@ int acquire_block(struct buddy_allocator *alloc, uint64_t order, uintptr_t *regi
         KFATAL("region_start must not be NULL\n");
     }
 
-    bspinlock_lock(&alloc->lock);
+    spin_lock_irq_save(&alloc->lock);
 
     struct buddy_data *data_first = BUDDY_ORDER_GET_DATA(buddy_order);
     struct buddy_data *choice = NULL;
@@ -302,7 +302,7 @@ int acquire_block(struct buddy_allocator *alloc, uint64_t order, uintptr_t *regi
         }
     }
 
-    bspinlock_unlock(&alloc->lock);
+    spin_unlock_irq_restore(&alloc->lock);
 
     return retval;
 }
@@ -354,7 +354,7 @@ void release_block(struct buddy_allocator *alloc, uintptr_t region_start) {
 
     struct page *page = HEAP_FIRST_PAGE(heap) + first_page_index;
 
-    bspinlock_lock(&alloc->lock);
+    spin_lock_irq_save(&alloc->lock);
 
     if (!page->allocated) {
         KFATAL("Attempt to free non-allocated page 0x%lx-0x%lx\n", region_start,
@@ -370,7 +370,7 @@ void release_block(struct buddy_allocator *alloc, uintptr_t region_start) {
     trickle_down_range(alloc, order, block_index, block_index + 1, 0);
     release_upward(alloc, order, block_index);
 
-    bspinlock_unlock(&alloc->lock);
+    spin_unlock_irq_restore(&alloc->lock);
 }
 
 uint64_t compute_order(uint64_t pages) {

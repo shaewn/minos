@@ -2,7 +2,7 @@
 #define KERNEL_MEMORY_MAP_H_
 
 #include "types.h"
-#include "bspinlock.h"
+#include "spinlock.h"
 
 void reserve_active_kernel_memory(void);
 void vmap_memory_map(void);

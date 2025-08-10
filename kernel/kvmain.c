@@ -51,6 +51,7 @@ void kvmain(uintptr_t vbrk) {
     reserve_active_kernel_memory();
 
     void *percpu_copy = (void *)vbrk;
+    set_percpu_start(percpu_copy);
 
     vbrk = map_percpu(vbrk);
 

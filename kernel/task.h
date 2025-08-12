@@ -18,9 +18,11 @@ enum task_state {
     TASK_STATE_TERMINATED
 };
 
-typedef int32_t task_state_t, prio_t, id_t;
+typedef int32_t task_state_t, prio_t, id_t, status_t;
 
+// TODO: Extract some of this into a struct task_stub, which will have a pointer to the struct task (optionally NULL, in which case the task would be a zombie)
 struct task {
+    // WARNING: If you move the regs fields to different offsets, you will have to change assembly code.
     struct regs cpu_regs;
     // struct fp_regs fp_regs;
     task_state_t state;
@@ -33,7 +35,15 @@ struct task {
     uintptr_t kernel_stack;
     uintptr_t user_stack;
 
+    cpu_t cpu;
     cpu_affinity_t affinity;
+
+    // These things can survive even after we destroy everything else from the task.
+    // (like Linux's Zombie Processes)
+    struct list_head wait_queue_node;
+    struct list_head wait_list;
+    spinlock_t wait_list_lock;
+    status_t exit_status;
 
     // atomic.
     uint32_t pin_count;
@@ -59,9 +69,13 @@ void update_state(struct task *task, task_state_t new_state);
 task_state_t get_state(struct task *task);
 
 bool task_pin(struct task *task);
+void guarantee_task_pin(struct task *task);
 void task_unpin(struct task *task);
 
 void begin_migration(struct task *task);
 void end_migration(struct task *task);
+
+void task_exit(status_t status);
+status_t wait_for_task(struct task *task);
 
 #endif

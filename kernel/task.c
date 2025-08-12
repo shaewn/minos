@@ -26,7 +26,7 @@ static const uint32_t prio_to_weight[40] = {
     110,   87,    70,    56,    45,    36,    29,    23,    18,    15     // 10..19
 };
 
-void update_runtime_values(struct task *task) {
+static void update_runtime_values(struct task *task) {
     time_t current = timer_get_phys();
 
     time_t delta = current - task->state_begin;
@@ -66,9 +66,13 @@ bool task_pin(struct task *task) {
     return false;
 }
 
+void guarantee_task_pin(struct task *task) {
+    while (!task_pin(task)) ;
+}
+
 void task_unpin(struct task *task) {
     __atomic_fetch_sub(&task->pin_count, 1, __ATOMIC_RELEASE);
-    cpu_signal_all();
+    cpu_signal_all(&task->pin_count);
 }
 
 void begin_migration(struct task *task) {
@@ -79,10 +83,25 @@ void begin_migration(struct task *task) {
     }
 
     while (__atomic_load_n(&task->pin_count, __ATOMIC_ACQUIRE) != 0) {
-        cpu_idle_wait();
+        cpu_idle_wait(&task->pin_count);
     }
 }
 
 void end_migration(struct task *task) {
     __atomic_store_n(&task->migrate_lock, 0, __ATOMIC_RELEASE);
+    cpu_signal_all(&task->pin_count);
+}
+
+
+void task_exit(status_t status) {
+
+}
+
+status_t wait_for_task(struct task *task) {
+    while (get_state(task) != TASK_STATE_TERMINATED) {
+        sched_block_task_local(current_task, &task->wait_list, &task->wait_list_lock);
+        sched_yield();
+    }
+
+    // TODO: Free the task.
 }

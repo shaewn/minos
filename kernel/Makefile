@@ -7,7 +7,7 @@ AFLAGS := -I.
 CC := aarch64-linux-gnu-gcc
 CFLAGS := -ffreestanding -I. -O0
 
-CFLAGS_NO_INIT :=
+CFLAGS_NO_INIT := -O2
 CFLAGS_INIT := -fno-pic
 
 C_SOURCES := $(shell find -path ./tests -prune -o -path ./arch -prune -o -name "*.c" -print) # include -print so that it doesn't print ./tests (man find(1))

@@ -7,6 +7,7 @@
 #include "arch/aarch64/types.h"
 #include "arch/aarch64/interrupts.h"
 #include "arch/aarch64/timer.h"
+#include "arch/aarch64/context.h"
 
 #define GET_PERCPU(var) (*ADDRESS_PERCPU(var))
 

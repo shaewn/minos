@@ -29,47 +29,83 @@ virtual_vector_base:
 //                      bl min_save_context
 min_save_context:
     // Get some registers to work with.
-    stp x2, x3, [sp, -32]
-    stp x0, x1, [sp, -48]
+    stp x0, x1, [sp, -32]
 
     mrs x0, tpidr_el1
     adrp x1, __pcpu_min_context
     add x1, x1, :lo12:__pcpu_min_context
-    add x1, x1, x0
-    // x1 contains a struct regs *
+    add x0, x1, x0
+
+    ldr x1, [sp, -24]
+
+min_save_context_to:
+    // x0 contains a struct regs *
+    // original values for x30, sp, at [sp, -16]
+    // original value for x0 at [sp, -32]
+    // every other register is saved as is.
+
+    stp x2, x3, [x0, 2 * 8]
+    mov x3, x1
+    ldr x2, [sp, -32]
+    // x2 contains original x0
+    // x3 contains original x1
+    stp x2, x3, [x0, 0 * 8]
+
     ldp x2, x3, [sp, -16]
     // x2 contains x30
     // x3 contains sp
-    stp x2, x3, [x1, 30 * 8]
+    stp x2, x3, [x0, 30 * 8]
 
-    stp x28, x29, [x1, 28 * 8]
-    mov x28, x1
+    // x2, x3 already stored up top
 
-    ldp x0, x1, [sp, -48]
-    ldp x2, x3, [sp, -32]
-
-    stp x0, x1, [x28, 0 * 8]
-    stp x2, x3, [x28, 2 * 8]
-    stp x4, x5, [x28, 4 * 8]
-    stp x6, x7, [x28, 6 * 8]
-    stp x8, x9, [x28, 8 * 8]
-    stp x10, x11, [x28, 10 * 8]
-    stp x12, x13, [x28, 12 * 8]
-    stp x14, x15, [x28, 14 * 8]
-    stp x16, x17, [x28, 16 * 8]
-    stp x18, x19, [x28, 18 * 8]
-    stp x20, x21, [x28, 20 * 8]
-    stp x22, x23, [x28, 22 * 8]
-    stp x24, x25, [x28, 24 * 8]
-    stp x26, x27, [x28, 26 * 8]
+    stp x4, x5, [x0, 4 * 8]
+    stp x6, x7, [x0, 6 * 8]
+    stp x8, x9, [x0, 8 * 8]
+    stp x10, x11, [x0, 10 * 8]
+    stp x12, x13, [x0, 12 * 8]
+    stp x14, x15, [x0, 14 * 8]
+    stp x16, x17, [x0, 16 * 8]
+    stp x18, x19, [x0, 18 * 8]
+    stp x20, x21, [x0, 20 * 8]
+    stp x22, x23, [x0, 22 * 8]
+    stp x24, x25, [x0, 24 * 8]
+    stp x26, x27, [x0, 26 * 8]
+    stp x28, x29, [x0, 28 * 8]
 
     // All registers are now free for saving the rest of the stuff.
-    mrs x0, elr_el1
-    mrs x1, spsr_el1
+    mrs x2, elr_el1
+    mrs x3, spsr_el1
 
-    stp x0, x1, [x28, 32 * 8]
+    stp x2, x3, [x0, 32 * 8]
+
+    // restore x2, x3 in case the caller needs them to be unchanged.
+    ldp x2, x3, [x0, 2 * 8]
 
     ret
+
+    .global save_state_and_switch_to
+save_state_and_switch_to:
+    // x0 contains ptr to old_task
+    // x1 contains ptr to new_task
+
+    // WARNING: offsetof(struct task, cpu_regs) == 0
+    str x30, [sp, -16]
+    mov x30, sp
+    str x30, [sp, -8]
+    stp x0, x1, [sp, -32]
+    bl min_save_context_to
+    ldp x0, x1, [sp, -32]
+
+    // Change the regs slightly, so that pc goes to what our x30 was upon entry.
+    ldr x8, [x0, 30 * 8]
+    str x8, [x0, 32 * 8]
+
+    // TODO: Save fp_regs and extra_regs
+    // NOTE: We could go back to C code at this point, since we saved the GPRs.
+
+    mov x0, x1
+    bl no_save_switch_to
+
 // void restore_regs_and_eret(struct regs *)
 restore_regs_and_eret:
     ldr x3, [x0, 31 * 8] // sp

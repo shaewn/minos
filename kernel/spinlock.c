@@ -13,7 +13,7 @@ void spin_lock_irq_save(volatile spinlock_t *lock) {
 
     while (1) {
         while (__atomic_load_n(&lock->flag, __ATOMIC_RELAXED) != UNLOCKED)
-            cpu_idle_wait();
+            cpu_idle_wait(lock);
 
         expected = UNLOCKED;
 
@@ -43,5 +43,5 @@ void spin_unlock_irq_restore(volatile spinlock_t *lock) {
     bool masked_val = lock->masked_val;
     __atomic_store_n(&lock->flag, UNLOCKED, __ATOMIC_RELEASE);
     restore_irq_mask(masked_val);
-    cpu_signal_all();
+    cpu_signal_all(lock);
 }

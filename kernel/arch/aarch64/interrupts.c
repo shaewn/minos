@@ -1,7 +1,6 @@
 #include "interrupts.h"
 #include "../../pltfrm.h"
 #include "arch/aarch64/cpu_id.h"
-#include "spinlock.h"
 #include "config.h"
 #include "cpu.h"
 #include "gic.h"
@@ -10,6 +9,7 @@
 #include "macros.h"
 #include "memory.h"
 #include "output.h"
+#include "spinlock.h"
 
 #define NUM_SPIS (1019 - 32 + 1)
 #define NUM_ESPIS (5119 - 4096 + 1)
@@ -258,6 +258,7 @@ void irq_enable_private(intid_t intid, bool level_sensitive) {
         return;
     }
 
+    // TODO: Make sure that the distributor is forwarding this private interrupt to the CPU's interface for it.
     set_enabled_sgi_or_ppi(intid, true);
     cfgr_sgi_or_ppi(intid, !level_sensitive);
     set_group_sgi_or_ppi(intid, 1);
@@ -274,7 +275,7 @@ static void swap_state(volatile struct sgi_mailbox *mailbox, uint32_t from_state
 
     while (1) {
         while (__atomic_load_n(&mailbox->state, __ATOMIC_RELAXED) != MAILBOX_STATE_IDLE)
-            cpu_idle_wait();
+            cpu_idle_wait(&mailbox->state);
 
         expected = from_state;
         if (__atomic_compare_exchange_n(&mailbox->state, &expected, to_state, false,
@@ -288,7 +289,8 @@ int accept_sgi(intid_t intid, struct sgi_data *data_buf) {
 
     volatile struct sgi_mailbox *mailbox = &per_core_mailboxes[this_cpu()].per_interrupt[intid];
     uint32_t expected = MAILBOX_STATE_AWAIT_READ;
-    if (!__atomic_compare_exchange_n(&mailbox->state, &expected, MAILBOX_STATE_READ, false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+    if (!__atomic_compare_exchange_n(&mailbox->state, &expected, MAILBOX_STATE_READ, false,
+                                     __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
         return -1;
     }
 
@@ -303,11 +305,23 @@ int end_sgi(intid_t intid) {
 
     volatile struct sgi_mailbox *mailbox = &per_core_mailboxes[this_cpu()].per_interrupt[intid];
     uint32_t expected = MAILBOX_STATE_READ;
-    if (!__atomic_compare_exchange_n(&mailbox->state, &expected, MAILBOX_STATE_IDLE, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+    if (!__atomic_compare_exchange_n(&mailbox->state, &expected, MAILBOX_STATE_IDLE, false,
+                                     __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
         return -1;
     }
 
     return 0;
+}
+
+// TODO: Make sgi mailboxes queued.
+static void send_to_mailbox(cpu_t target, intid_t intid, void *payload) {
+    volatile struct sgi_mailbox *mailbox = &per_core_mailboxes[target].per_interrupt[intid];
+    swap_state(mailbox, MAILBOX_STATE_IDLE, MAILBOX_STATE_WRITE);
+
+    mailbox->data.payload = payload;
+    mailbox->data.sender = this_cpu();
+
+    __atomic_store_n(&mailbox->state, MAILBOX_STATE_AWAIT_READ, __ATOMIC_RELEASE);
 }
 
 void send_all_sgi(intid_t intid, void *payload) {
@@ -319,14 +333,37 @@ void send_all_sgi(intid_t intid, void *payload) {
             continue;
         }
 
-        volatile struct sgi_mailbox *mailbox = &per_core_mailboxes[cpu].per_interrupt[intid];
-        swap_state(mailbox, MAILBOX_STATE_IDLE, MAILBOX_STATE_WRITE);
-
-        mailbox->data.payload = payload;
-        mailbox->data.sender = current;
-
-        __atomic_store_n(&mailbox->state, MAILBOX_STATE_AWAIT_READ, __ATOMIC_RELEASE);
+        send_to_mailbox(cpu, intid, payload);
     }
 
     asm volatile("msr icc_sgi1r_el1, %0" ::"r"(0x0000010000000000 | intid << 24));
+}
+
+void send_sgi(cpu_t target, intid_t intid, void *payload) {
+    intid &= 0xf;
+    send_to_mailbox(target, intid, payload);
+
+    uint32_t affinities = get_affinities(get_mpidr(target));
+
+    uint64_t sgi_val = 0;
+
+    uint64_t aff3 = EXTRACT(affinities, 31, 24);
+    uint64_t aff2 = EXTRACT(affinities, 23, 16);
+    uint64_t aff1 = EXTRACT(affinities, 15, 8);
+    uint64_t aff0 = EXTRACT(affinities, 7, 0);
+
+    sgi_val |= aff3 << 48;
+    sgi_val |= aff2 << 32;
+    sgi_val |= aff1 << 16;
+
+    uint8_t range = (aff0 / 16) & 0xf;
+    uint8_t index = aff0 % 16;
+
+    sgi_val = REPLACE(sgi_val, 47, 44, range);
+    sgi_val = REPLACE(sgi_val, 27, 24, intid);
+    sgi_val |= 1ull << index;
+
+    // Interrupt routing mode: 0 -> routed to the PEs specified by Aff3.Aff2.Aff1.<target list>
+
+    asm volatile("msr icc_sgi1r_el1, %0" ::"r"(sgi_val));
 }

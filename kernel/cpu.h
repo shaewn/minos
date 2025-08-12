@@ -10,8 +10,8 @@
 
 cpu_t this_cpu(void);
 
-void cpu_idle_wait(void);
-void cpu_signal_all(void);
+void cpu_idle_wait(volatile void *addr);
+void cpu_signal_all(volatile void *addr);
 
 typedef uint64_t cpu_affinity_t[BITS_TO_U64S(MAX_CPUS)];
 

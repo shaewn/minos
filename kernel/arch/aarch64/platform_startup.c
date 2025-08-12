@@ -1,4 +1,5 @@
 #include "../../pltfrm.h"
+#include "arch/aarch64/sgis.h"
 #include "sched.h"
 #include "arch/aarch64/cpu_id.h"
 #include "config.h"
@@ -211,6 +212,7 @@ void cpu_setup_interrupts(void) {
 }
 
 void setup_interrupts(void) {
+    // FIXME: Disable ALL interrupts, global and private, upon initialization.
     struct rdt_node *intc = find_primary_interrupt_controller();
     if (!intc) {
         KFATAL("Failed to identify primary interrupt controller.\n");
@@ -417,6 +419,8 @@ void platform_startup(void) {
     // print_rdt();
 
     setup_interrupts();
+    setup_sgis();
+
     bring_up_secondary();
 
     create_startup_task();
@@ -431,6 +435,7 @@ void secondary_main(void *pcpu_start) {
     set_percpu_start(pcpu_start);
 
     cpu_setup_interrupts();
+    setup_sgis();
 
     ctdn_latch_decrement(&startup_latch);
 

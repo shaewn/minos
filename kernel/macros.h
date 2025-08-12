@@ -12,7 +12,7 @@
 #define ONES_IN_RANGE(h, l) (((1ULL << (h - l + 1)) - 1) << l)
 #define EXTRACT(a, h, l) ((a & ONES_IN_RANGE(h, l)) >> l)
 #define CLEAR(a, h, l) (a & ~ONES_IN_RANGE(h, l))
-#define REPLACE(a, h, l, new_bits) (CLEAR(a, h, l) | ((new_bits) << l))
+#define REPLACE(a, h, l, new_bits) (CLEAR(a, h, l) | (((typeof(a))new_bits) << l))
 
 #define OFFSET_OF(type, member) offsetof(type, member)
 #define CONTAINER_OF(ptr, type, member) ((type *)((char *)(ptr) - OFFSET_OF(type, member)))

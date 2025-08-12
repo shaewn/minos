@@ -24,4 +24,6 @@ void list_add_tail(struct list_head *node, struct list_head *head);
 
 void list_del(struct list_head *node);
 
+bool list_empty(struct list_head *head);
+
 #endif

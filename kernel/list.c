@@ -27,3 +27,7 @@ static void list_do_del(struct list_head *node, struct list_head *prev, struct l
 void list_del(struct list_head *node) {
     list_do_del(node, node->prev, node->next);
 }
+
+bool list_empty(struct list_head *head) {
+    return head->next == head;
+}

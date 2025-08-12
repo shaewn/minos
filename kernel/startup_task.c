@@ -8,8 +8,12 @@ PERCPU_UNINIT uintptr_t __pcpu_cpu_stacks[MAX_CPUS];
 void startup_task(void) {
     print_rdt();
 
-    while (1) {
+    for (int i = 0; i < 3; i++) {
         kprint("Running...\nRuntime: %016lx cycles\nVRuntime: %016lx cycles\n", current_task->runtime, current_task->vruntime);
+        sched_yield();
+    }
+
+    while (1) {
         asm volatile("wfi");
     }
 }
@@ -29,5 +33,5 @@ void create_startup_task(void) {
     the_task->cpu_regs.pstate = 0x0000000000000005;
 
     update_state(the_task, TASK_STATE_NEW_BORN);
-    sched_ready_task(the_task);
+    sched_ready_task_local(the_task);
 }

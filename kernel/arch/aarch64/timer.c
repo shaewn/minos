@@ -82,7 +82,7 @@ void wfi_loop(void) {
 
 static void begin_slice(void) { timer_set_counter(TIME_SLICE()); }
 
-[[noreturn]] static void switch_to_task(struct task *task) {
+void no_save_switch_to(struct task *task) {
     current_task = task;
 
     struct regs *regs, local_regs;
@@ -96,14 +96,16 @@ static void begin_slice(void) { timer_set_counter(TIME_SLICE()); }
         regs->pc = (uint64_t)wfi_loop;
     }
 
+    // TODO: Restore fp_regs and extra_regs.
+
     [[noreturn]] void restore_then_eret(uint64_t orig_sp_el1, struct regs *regs);
     update_state(task, TASK_STATE_RUNNING);
     begin_slice();
     restore_then_eret(min_context.sp, regs);
 }
 
-static void save_context_to(struct task *task) {
-    struct regs *regs = &current_task->cpu_regs;
+void ex_save_context_to(struct task *task) {
+    struct regs *regs = &task->cpu_regs;
     copy_memory(regs, &min_context, sizeof(*regs));
 
     if (PSTATE_USES_SP_EL0(regs->pstate)) {
@@ -117,21 +119,19 @@ static void timer_handle(void) {
     kprint("Handling...\n");
 
     if (current_task) {
-        save_context_to(current_task);
+        ex_save_context_to(current_task);
 
         if (!can_preempt()) {
             kprint("Can't preempt, running same task...\n");
-            switch_to_task(current_task);
+            no_save_switch_to(current_task);
         } else {
-            sched_ready_task(current_task);
+            sched_ready_task_local(current_task);
         }
+
+        current_task = NULL;
     }
 
-    struct task *t = sched_run();
-
-    kprint("Scheduling %s task...\n", t == current_task ? "same" : "new");
-
-    switch_to_task(t);
+    sched_run(false);
 }
 
 static void timer_handler(void *ctx, intid_t intid) {

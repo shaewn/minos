@@ -2,6 +2,7 @@
 #define AARCH64_INTERRUPTS_H_
 
 #include "types.h"
+#include "sgis.h"
 
 #define INTID_INVALID ((intid_t)-1)
 #define IH_NO_HANDLER ((interrupt_handler_t)0)
@@ -49,6 +50,7 @@ int accept_sgi(intid_t intid, struct sgi_data *data_buf);
 int end_sgi(intid_t intid);
 
 void send_all_sgi(intid_t intid, void *payload);
+void send_sgi(cpu_t target, intid_t intid, void *payload);
 
 // TODO:
 // void irq_route_shared(intid_t intid, cpu_mask_t cpu_mask);

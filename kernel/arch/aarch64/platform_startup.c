@@ -384,6 +384,8 @@ void bring_up_secondary(void) {
     kprint("The primary cpu is %u. We have %u cpus.\n", this_cpu(), cpu_count());
 }
 
+void wfi_loop(void);
+
 void platform_startup(void) {
     struct fdt_header *header = kvmalloc(1, 0);
 
@@ -426,6 +428,8 @@ void platform_startup(void) {
     create_startup_task();
 
     timer_start();
+
+    wfi_loop();
 }
 
 void platform_basic_init();
@@ -439,7 +443,6 @@ void secondary_main(void *pcpu_start) {
 
     ctdn_latch_decrement(&startup_latch);
 
-    void wfi_loop(void);
     wfi_loop();
     // timer_start();
 }

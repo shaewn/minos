@@ -6,6 +6,11 @@
 #define UNLOCKED 0
 #define LOCKED 1
 
+void spin_lock_init(volatile spinlock_t *lock) {
+    lock->holder = CPU_INVALID;
+    __atomic_store_n(&lock->flag, UNLOCKED, __ATOMIC_RELEASE);
+}
+
 void spin_lock_irq_save(volatile spinlock_t *lock) {
     uint8_t expected;
 

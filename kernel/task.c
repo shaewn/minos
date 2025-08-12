@@ -1,6 +1,8 @@
 #include "task.h"
 #include "kmalloc.h"
+#include "memory.h"
 #include "pltfrm.h"
+#include "spinlock.h"
 
 struct task *__pcpu_current_task PERCPU_UNINIT;
 
@@ -8,10 +10,15 @@ struct task *create_task(void) {
     struct task *task = kmalloc(sizeof(*task));
     task->preempt_counter = 0;
     task->runtime = 0;
-    task->vruntime = get_min_vruntime();
+    task->vruntime = get_min_vruntime(); // This can be set to 0.
+
+    ctdn_latch_set(&task->ref_cnt, 1);
     task->mm = NULL;
     __atomic_store_n(&task->pin_count, 0, __ATOMIC_RELEASE);
     __atomic_store_n(&task->migrate_lock, 0, __ATOMIC_RELEASE);
+
+    list_init(&task->wait_list);
+    spin_lock_init(&task->wait_list_lock);
 
     return task;
 }
@@ -39,7 +46,7 @@ static void update_runtime_values(struct task *task) {
 }
 
 void update_state(struct task *task, task_state_t new_state) {
-    switch (task->state) {
+    switch (get_state(task)) {
         case TASK_STATE_RUNNING: {
             update_runtime_values(task);
             break;
@@ -92,6 +99,42 @@ void end_migration(struct task *task) {
     cpu_signal_all(&task->pin_count);
 }
 
+static uintptr_t duplicate_kernel_stack(void) {
+    void *ptr = kmalloc(KSTACK_SIZE);
+
+    copy_memory(ptr, (void *)current_task->kernel_stack_base, KSTACK_SIZE);
+
+    return (uintptr_t) ptr;
+}
+
+struct task *clone_current(void) {
+    sched_preempt_disable();
+
+    struct task *new_task = create_task();
+
+    uintptr_t new_stack_base = duplicate_kernel_stack();
+    uintptr_t old_stack_base = current_task->kernel_stack_base;
+
+    new_task->kernel_stack_base = new_stack_base;
+
+    copy_memory(&new_task->affinity, &current_task->affinity, sizeof(cpu_affinity_t));
+
+    new_task->prio = current_task->prio;
+
+    sched_ready_task_local(new_task);
+
+    save_context_no_switch(new_task, old_stack_base, new_stack_base);
+    // new_task will resume exactly at this moment.
+
+    if (current_task == new_task) {
+        // don't sched_preempt_enable here, our preempt_counter is 0 cause we're fresh.
+        new_task = NULL; // Make it easy to distinguish between the parent and child task.
+    } else {
+        sched_preempt_enable();
+    }
+
+    return new_task;
+}
 
 void task_exit(status_t status) {
 
@@ -100,7 +143,6 @@ void task_exit(status_t status) {
 status_t wait_for_task(struct task *task) {
     while (get_state(task) != TASK_STATE_TERMINATED) {
         sched_block_task_local(current_task, &task->wait_list, &task->wait_list_lock);
-        sched_yield();
     }
 
     // TODO: Free the task.

@@ -13,6 +13,14 @@ void startup_task(void) {
         sched_yield();
     }
 
+    struct task *task = clone_current();
+
+    if (task) {
+        kprint("Hello, I'm the parent.\nMy task pointer is %lx\n", current_task);
+    } else {
+        kprint("Hello, I'm the child.\nMy task pointer is %lx\n", current_task);
+    }
+
     while (1) {
         asm volatile("wfi");
     }
@@ -21,14 +29,17 @@ void startup_task(void) {
 void create_startup_task(void) {
     struct task *the_task = create_task();
 
+    // go around task_ref_dec, it may free the task.
+    ctdn_latch_set(&the_task->ref_cnt, 0);
+
     the_task->cpu_regs.pc = (uint64_t)startup_task;
-    the_task->user_stack = 0;
-    the_task->kernel_stack = cpu_stacks[this_cpu()];
+    the_task->user_stack_base = 0;
+    the_task->kernel_stack_base = cpu_stacks[this_cpu()] - KSTACK_SIZE;
 
     cpu_affinity_clear_all(&the_task->affinity);
     cpu_affinity_set(&the_task->affinity, this_cpu());
 
-    the_task->cpu_regs.sp = the_task->kernel_stack;
+    the_task->cpu_regs.sp = cpu_stacks[this_cpu()];
     // EL1 with SP_EL1
     the_task->cpu_regs.pstate = 0x0000000000000005;
 

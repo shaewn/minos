@@ -17,34 +17,35 @@ static void sched_sgi_handler(intid_t intid, void *context) {
 
     struct sched_sgi_payload *payload = data.payload;
 
-    bool do_unpin = false;
+    bool do_unpin = true;
+    bool dec_task = true;
 
     switch (payload->message_type) {
         case SCHED_MESSAGE_NONE:
+            do_unpin = false;
             break;
         case SCHED_MESSAGE_READY_TASK: {
-            // Scheduler obviously not running right now, and won't (interrupts disabled).
-            // But this will disable/enable preemption anyway. Meh.
             sched_ready_task_local(payload->task);
-            do_unpin = true;
             break;
         }
 
         case SCHED_MESSAGE_SUSPEND_TASK: {
             sched_suspend_task_local(payload->task);
-            do_unpin = true;
             break;
         }
 
         case SCHED_MESSAGE_BLOCK_TASK: {
             sched_block_task_local(payload->task, payload->wait_head, payload->wait_head_lock);
-            do_unpin = true;
             break;
         }
     }
 
     if (do_unpin) {
         task_unpin(payload->task);
+    }
+
+    if (dec_task) {
+        task_ref_dec(payload->task);
     }
 
     kfree(payload);

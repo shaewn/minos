@@ -11,4 +11,3 @@ cpu_idle_wait:
     ret
 cpu_signal_all:
     ret
-

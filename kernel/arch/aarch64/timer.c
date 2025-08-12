@@ -127,8 +127,6 @@ static void timer_handle(void) {
         } else {
             sched_ready_task_local(current_task);
         }
-
-        current_task = NULL;
     }
 
     sched_run(false);

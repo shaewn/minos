@@ -42,6 +42,7 @@ min_save_context_to:
     // x0 contains a struct regs *
     // original values for x30, sp, at [sp, -16]
     // original value for x0 at [sp, -32]
+    // no stack address are written, only those ones are read.
     // every other register is saved as is.
 
     stp x2, x3, [x0, 2 * 8]
@@ -83,28 +84,85 @@ min_save_context_to:
 
     ret
 
-    .global save_state_and_switch_to
-save_state_and_switch_to:
-    // x0 contains ptr to old_task
-    // x1 contains ptr to new_task
+// just like min_save_context_to,
+// but we use the saved x30 as the return address.
+// also, WARNING: This function WILL overwrite stack variables below our starting sp.
+do_save:
+    // x0 contains struct regs *
+    str x30, [sp, -48]
 
-    // WARNING: offsetof(struct task, cpu_regs) == 0
-    str x30, [sp, -16]
-    mov x30, sp
-    str x30, [sp, -8]
-    stp x0, x1, [sp, -32]
+    // does not write to any stack addresses, so our saved x30 is safe.
     bl min_save_context_to
     ldp x0, x1, [sp, -32]
 
-    // Change the regs slightly, so that pc goes to what our x30 was upon entry.
-    ldr x8, [x0, 30 * 8]
-    str x8, [x0, 32 * 8]
+    ldr x8, [sp, -16] // load original x30
+    str x8, [x0, 32 * 8] // use original x30 as elr_el1/pc
+
+    ldr x30, [sp, -48]
 
     // TODO: Save fp_regs and extra_regs
-    // NOTE: We could go back to C code at this point, since we saved the GPRs.
+    // WARNING: We can't go back to C code because of the way we're storing x30.
+    // If we change that slightly, we can.
 
+    ldr x30, [sp, -48]
+    ret
+
+    .global save_and_switch_to
+save_and_switch_to:
+    // x0 contains ptr to old_task
+    // x1 contains ptr to new_task
+    // WARNING: Don't change x29, we want that to be restored.
+    stp x29, x30, [sp, -16]!
+    sub sp, sp, 16
+    stp x0, x1, [sp]
+
+    add x0, sp, 32
+
+    str x30, [sp, -16]
+    str x0, [sp, -8] // original sp
+    ldr x0, [sp]
+    str x0, [sp, -32]
+    add x0, x0, 0
+    // WARNING: offsetof(struct task, cpu_regs) == 0
+    // so x0 is already the cpu_regs ptr
+    bl do_save
+
+    // NOTE: Now that we have saved GPRs, we can change x29
+    add x29, sp, 16
+
+    ldp x0, x1, [sp], 32
     mov x0, x1
     bl no_save_switch_to
+
+    .global save_context_no_switch
+save_context_no_switch:
+    // x0 contains ptr to task.
+    // x1 contains the active_stack_base
+    // x2 contains the task_stack_base
+    // WARNING: Don't change x29, we want that to be restored as is.
+    stp x29, x30, [sp, -16]!
+    sub sp, sp, 16
+    str x0, [sp]
+
+    add x0, sp, 32
+    sub x0, x0, x1
+    add x0, x0, x2
+
+    str x30, [sp, -16]
+    str x0, [sp, -8] // proper sp that will be restored to task
+    ldr x0, [sp]
+    str x0, [sp, -32]
+    add x0, x0, 0
+    // WARNING: offsetof(struct task, cpu_regs) == 0
+    // so x0 is already the cpu_regs ptr
+    bl do_save
+
+    // NOTE: Now that we have saved GPRs, we can change x29
+    add x29, sp, 16
+
+    add sp, sp, 32
+    ldp x29, x30, [sp, -16]
+    ret
 
 // void restore_regs_and_eret(struct regs *)
 restore_regs_and_eret:
@@ -156,3 +214,10 @@ restore_then_eret:
     mov sp, x0
     mov x0, x1
     b restore_regs_and_eret
+
+    .global swap_stack
+// void swap_stack(uintptr_t current_stack_base, uintptr_t new_stack_base)
+swap_stack:
+    sub x4, sp, x0
+    add sp, x4, x1
+    ret

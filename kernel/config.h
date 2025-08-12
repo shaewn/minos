@@ -8,6 +8,6 @@
 #define MAX_PROC 1048576
 
 // 64 KiB
-#define KSTACK_SIZE PAGE_SIZE
+#define KSTACK_SIZE (2 * PAGE_SIZE)
 
 #endif

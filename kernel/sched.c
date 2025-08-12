@@ -8,11 +8,21 @@
 #define suspended_list GET_PERCPU(__pcpu_suspended_list)
 #define min_vruntime GET_PERCPU(__pcpu_min_vruntime)
 
-PERCPU_UNINIT struct rb_node *__pcpu_run_queue_root;
-PERCPU_INIT struct list_head __pcpu_blocked_list, __pcpu_suspended_list;
-PERCPU_UNINIT time_t __pcpu_min_vruntime;
+static PERCPU_UNINIT struct rb_node *__pcpu_run_queue_root;
+static PERCPU_INIT struct list_head __pcpu_blocked_list, __pcpu_suspended_list;
+static PERCPU_UNINIT time_t __pcpu_min_vruntime;
 
-struct rb_node *get_leftmost_node(void) {
+static void wait_queue_insert(struct list_head *wait_head, struct task *task) {
+    task_ref_inc(task);
+    list_add_tail(&task->wait_queue_node, wait_head);
+}
+
+static void wait_queue_del(struct task *task) {
+    task_ref_dec(task);
+    list_del(&task->wait_queue_node);
+}
+
+static struct rb_node *get_leftmost_node(void) {
     struct rb_node *current = run_queue_root;
 
     if (!current) {
@@ -129,11 +139,37 @@ static void run_queue_insert(struct task *task) {
     rb_insert_color(rb, &run_queue_root);
 
     update_min_vruntime();
+
+    task_ref_inc(task);
+    task->cpu = this_cpu();
 }
 
 static void run_queue_del(struct task *task) {
     rb_del(&task->sched_node.run_queue_node, &run_queue_root);
     update_min_vruntime();
+    task_ref_dec(task);
+}
+
+static void block(struct task *task) {
+    list_add_tail(&task->sched_node.blocked_node, &blocked_list);
+    task_ref_inc(task);
+    task->cpu = this_cpu();
+}
+
+static void unblock(struct task *task) {
+    list_del(&task->sched_node.blocked_node);
+    task_ref_dec(task);
+}
+
+static void suspend(struct task *task) {
+    list_add_tail(&task->sched_node.suspended_node, &suspended_list);
+    task_ref_inc(task);
+    task->cpu = this_cpu();
+}
+
+static void unsuspend(struct task *task) {
+    list_del(&task->sched_node.suspended_node);
+    task_ref_dec(task);
 }
 
 void sched_run(bool save_state) {
@@ -143,21 +179,26 @@ void sched_run(bool save_state) {
                             sched_node)
              : NULL;
 
+    if (selected != current_task) {
+        if (selected) task_ref_inc(selected);
+        if (current_task) task_ref_dec(current_task);
+    }
+
     if (selected) {
         run_queue_del(selected);
     }
 
     if (save_state) {
-        save_state_and_switch_to(current_task, selected);
+        save_and_switch_to(current_task, selected);
     } else {
         no_save_switch_to(selected);
     }
 }
 
 static void remove_prior(struct task *task) {
-    switch (task->state) {
+    switch (get_state(task)) {
         case TASK_STATE_BLOCKED: {
-            list_del(&task->sched_node.blocked_node);
+            unblock(task);
             break;
         }
 
@@ -173,7 +214,7 @@ static void remove_prior(struct task *task) {
         }
 
         case TASK_STATE_SUSPENDED: {
-            list_del(&task->sched_node.suspended_node);
+            unsuspend(task);
             break;
         }
     }
@@ -182,11 +223,11 @@ static void remove_prior(struct task *task) {
 void sched_ready_task_local(struct task *task) {
     sched_preempt_disable();
 
-    remove_prior(task);
-    update_state(task, TASK_STATE_READY);
-    run_queue_insert(task);
-
-    task->cpu = this_cpu();
+    if (get_state(task) != TASK_STATE_READY) {
+        run_queue_insert(task);
+        remove_prior(task);
+        update_state(task, TASK_STATE_READY);
+    }
 
     sched_preempt_enable();
 }
@@ -194,11 +235,11 @@ void sched_ready_task_local(struct task *task) {
 void sched_suspend_task_local(struct task *task) {
     sched_preempt_disable();
 
-    remove_prior(task);
-    update_state(task, TASK_STATE_SUSPENDED);
-    list_add_tail(&task->sched_node.suspended_node, &suspended_list);
-
-    task->cpu = this_cpu();
+    if (get_state(task) != TASK_STATE_SUSPENDED) {
+        suspend(task);
+        remove_prior(task);
+        update_state(task, TASK_STATE_SUSPENDED);
+    }
 
     if (task == current_task) {
         sched_run(true);
@@ -223,15 +264,15 @@ void sched_block_task_local(struct task *task, struct list_head *wait_head,
 
     maybe_lock(lock);
 
-    // These three operations happen atomically with respect to the wait queue.
-    remove_prior(task);
-    update_state(task, TASK_STATE_BLOCKED);
-    list_add_tail(&task->wait_queue_node, wait_head);
+    if (get_state(task) != TASK_STATE_BLOCKED) {
+        // These three operations happen atomically with respect to the wait queue.
+        wait_queue_insert(wait_head, task);
+        block(task);
+        remove_prior(task);
+        update_state(task, TASK_STATE_BLOCKED);
+    }
 
     maybe_unlock(lock);
-
-    list_add_tail(&task->sched_node.blocked_node, &blocked_list);
-    task->cpu = this_cpu();
 
     if (task == current_task) {
         sched_run(true);
@@ -249,9 +290,8 @@ void sched_unblock_one(struct list_head *wait_head, spinlock_t *_Nullable lock) 
 
     if (!list_empty(wait_head)) {
         struct list_head *node = wait_head->next;
-        list_del(node);
-
         task = CONTAINER_OF(node, struct task, wait_queue_node);
+        wait_queue_del(task);
     }
 
     maybe_unlock(lock);
@@ -274,8 +314,8 @@ void sched_unblock_all(struct list_head *wait_head, spinlock_t *_Nullable lock) 
 
         if (!list_empty(wait_head)) {
             struct list_head *node = wait_head->next;
-            list_del(node);
             task = CONTAINER_OF(node, struct task, wait_queue_node);
+            wait_queue_del(task);
         }
 
         maybe_unlock(lock);
@@ -290,6 +330,12 @@ void sched_unblock_all(struct list_head *wait_head, spinlock_t *_Nullable lock) 
     }
 }
 
+// WARNING: You must use this function EVERY time a task escapes the current context.
+static struct task *prepare_for_escape(struct task *task) {
+    task_ref_inc(task);
+    return task;
+}
+
 void sched_ready_task_remote(struct task *task) {
     sched_preempt_disable();
     guarantee_task_pin(task);
@@ -301,7 +347,7 @@ void sched_ready_task_remote(struct task *task) {
     } else {
         struct sched_sgi_payload *payload = kmalloc(sizeof(*payload));
         payload->message_type = SCHED_MESSAGE_READY_TASK;
-        payload->task = task;
+        payload->task = prepare_for_escape(task);
         send_sgi(task->cpu, SCHED_SGI, payload);
     }
 
@@ -319,7 +365,7 @@ void sched_suspend_task_remote(struct task *task) {
     } else {
         struct sched_sgi_payload *payload = kmalloc(sizeof(*payload));
         payload->message_type = SCHED_MESSAGE_SUSPEND_TASK;
-        payload->task = task;
+        payload->task = prepare_for_escape(task);
         send_sgi(task->cpu, SCHED_SGI, payload);
     }
 
@@ -340,7 +386,7 @@ void sched_block_task_remote(struct task *task, struct list_head *wait_head,
     } else {
         struct sched_sgi_payload *payload = kmalloc(sizeof(*payload));
         payload->message_type = SCHED_MESSAGE_BLOCK_TASK;
-        payload->task = task;
+        payload->task = prepare_for_escape(task);
         payload->wait_head = wait_head;
         payload->wait_head_lock = lock;
         send_sgi(task->cpu, SCHED_SGI, payload);
@@ -361,16 +407,16 @@ void sched_yield(void) {
 
 void sched_preempt_disable(void) {
     if (current_task)
-        __atomic_fetch_add(&current_task->preempt_counter, 1, __ATOMIC_ACQ_REL);
+        current_task->preempt_counter++;
 }
 
 void sched_preempt_enable(void) {
     if (current_task)
-        __atomic_fetch_sub(&current_task->preempt_counter, 1, __ATOMIC_RELEASE);
+        current_task->preempt_counter--;
 }
 
 bool can_preempt(void) {
-    return !current_task || __atomic_load_n(&current_task->preempt_counter, __ATOMIC_ACQUIRE) == 0;
+    return !current_task || current_task->preempt_counter == 0;
 }
 
 time_t get_min_vruntime(void) { return min_vruntime; }

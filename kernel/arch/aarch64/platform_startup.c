@@ -1,4 +1,5 @@
 #include "../../pltfrm.h"
+#include "sched.h"
 #include "arch/aarch64/cpu_id.h"
 #include "config.h"
 #include "cpu.h"
@@ -19,6 +20,7 @@
 #include "prot.h"
 #include "rdt.h"
 #include "secondary_context.h"
+#include "startup_task.h"
 #include "string.h"
 #include "timer.h"
 #include "vmap.h"
@@ -151,45 +153,6 @@ int is_pend_sgi_or_ppi(uint32_t intid) {
     uintptr_t reg = sgi_base + GICR_ISPENDR0 + n * 4;
 
     return (mmio_read32(reg) >> bit) & 1;
-}
-
-#define TIME_SLICE() (timer_gethz())
-#define TIMER_INTID() ((intid_t)30)
-
-static PERCPU_UNINIT struct timer_context {
-    uint32_t count;
-} __pcpu_timer_ctx;
-#define timer_ctx GET_PERCPU(__pcpu_timer_ctx)
-
-static void timer_handler(void *ctx, intid_t intid) {
-    struct timer_context *tctx = ctx;
-    kprint("[%u] Timer! (on cpu %u)\n", tctx->count, this_cpu());
-
-    ++tctx->count;
-
-    timer_set_counter(TIME_SLICE());
-    end_intid(intid);
-}
-
-static void timer_on_enable(void *context) { irq_enable_private(TIMER_INTID(), true); }
-
-static void timer_on_disable(void *context) { irq_disable_private(TIMER_INTID()); }
-
-#define timer_driver GET_PERCPU(__pcpu_timer_driver)
-static PERCPU_INIT struct driver __pcpu_timer_driver = {
-    "Generic Timer", 1, {30}, NULL, NULL, NULL, timer_on_enable, timer_on_disable, timer_handler};
-
-void setup_timer(void) {
-    uint32_t freq_hz = timer_gethz();
-
-    timer_driver.context = &timer_ctx;
-    register_private_driver(&timer_driver);
-
-    timer_set_counter(TIME_SLICE());
-    timer_enable();
-
-    while (1) {
-    }
 }
 
 static void find_parent_ac_sc(struct rdt_node *node, uint32_t *ac, uint32_t *sc) {
@@ -355,6 +318,9 @@ void bring_up_secondary(void) {
         }
     }
 
+    extern char __stack_top;
+    cpu_stacks[this_cpu()] = (uintptr_t)&__stack_top;
+
     struct sndry_ctx *ctxs = kmalloc(sizeof(*ctxs) * cpu_count());
 
     uint64_t ttbr0, ttbr1, tcr, mair;
@@ -370,8 +336,11 @@ void bring_up_secondary(void) {
     ctdn_latch_set(&startup_latch, cpu_count());
 
     for (cpu_t cpu = 0; cpu < cpu_count(); cpu++) {
+        if (cpu == this_cpu()) continue;
+
         ctxs[cpu].percpu_base = percpu_copy();
         ctxs[cpu].stack = alloc_stack();
+        cpu_stacks[cpu] = (uintptr_t) ctxs[cpu].stack;
         ctxs[cpu].ttbr1 = (void *)ttbr1;
         ctxs[cpu].ttbr0 = (void *)ttbr0;
         ctxs[cpu].tcr = tcr;
@@ -449,6 +418,10 @@ void platform_startup(void) {
 
     setup_interrupts();
     bring_up_secondary();
+
+    create_startup_task();
+
+    timer_start();
 }
 
 void platform_basic_init();
@@ -457,11 +430,13 @@ void secondary_main(void *pcpu_start) {
     platform_basic_init();
     set_percpu_start(pcpu_start);
 
-    kprint("Hello, world! (%u)\n", this_cpu());
-
     cpu_setup_interrupts();
 
     ctdn_latch_decrement(&startup_latch);
+
+    void wfi_loop(void);
+    wfi_loop();
+    // timer_start();
 }
 
 void platform_basic_init(void) { asm volatile("msr cpacr_el1, %x0" ::"r"(0x23330000)); }

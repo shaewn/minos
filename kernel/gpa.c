@@ -295,11 +295,7 @@ heap_region_header_t *def_gpa_acquire(void *user, size_t alloc_size) {
     size_t pages = alloc_size / PAGE_SIZE;
 
     heap_region_header_t *hdr = kvmalloc(pages, 0);
-
-    for (size_t i = 0; i < pages; i++) {
-        uintptr_t page = (uintptr_t)hdr + PAGE_SIZE * i;
-        vmap(page, begin + PAGE_SIZE * i, PROT_RSYS | PROT_WSYS, MEMORY_TYPE_NORMAL, 0);
-    }
+    vmap_range((uintptr_t)hdr, begin, pages, PROT_RSYS | PROT_WSYS, MEMORY_TYPE_NORMAL, 0);
 
     hdr->size = alloc_size;
 
@@ -309,12 +305,8 @@ heap_region_header_t *def_gpa_acquire(void *user, size_t alloc_size) {
 void def_gpa_release(void *user, heap_region_header_t *region) {
     size_t pages = region->size / PAGE_SIZE;
 
-    // TODO: Free the underlying physical memory.
-
-    for (size_t i = 0; i < pages; i++) {
-        uintptr_t page = (uintptr_t)region + PAGE_SIZE * i;
-        vumap(page);
-    }
+    global_release_block(get_phys_mapping((uintptr_t)region));
+    vumap_range((uintptr_t)region, pages);
 
     kvfree(region);
 }

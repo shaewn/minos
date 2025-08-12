@@ -2,9 +2,14 @@
 #define AARCH64_TIMER_H_
 
 #include "types.h"
+#include "time.h"
+
+void timer_start(void);
 
 void timer_enable(void);
 void timer_disable(void);
+
+time_t timer_get_phys(void);
 
 void timer_set_imask(void);
 void timer_clear_imask(void);

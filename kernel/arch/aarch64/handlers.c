@@ -96,8 +96,6 @@ void kernel_ehandler(void) {
 void irq_handler(void) {
     intid_t intid = intid_ack();
 
-    kprint("Interrupt with intid %u\n", intid);
-
     void dispatch_irq(intid_t intid);
     dispatch_irq(intid);
 }

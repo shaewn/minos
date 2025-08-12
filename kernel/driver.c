@@ -15,7 +15,7 @@ static void setup_driver(struct driver *driver) {
         driver->init(driver->context);
     }
 
-    enable_driver(driver->__id);
+    // enable_driver(driver->__id);
 }
 
 struct driver *dup_driver(struct driver *driver, struct driver *new_driver) {

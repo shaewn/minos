@@ -1,6 +1,10 @@
 #include "cpu_id.h"
 #include "config.h"
 #include "macros.h"
+#include "../../pltfrm.h"
+#include "output.h"
+
+#define cached_cpu GET_PERCPU(__pcpu_cached_cpu)
 
 static uint64_t mpidr_table[MAX_CPUS];
 static uint32_t current_index;
@@ -37,10 +41,24 @@ cpu_t get_cpu_id(uint64_t mpidr) {
 uint32_t cpu_count(void) { return current_index; }
 
 cpu_t this_cpu(void) {
-    uint64_t mpidr;
-    asm volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
+    static PERCPU_INIT cpu_t __pcpu_cached_cpu = CPU_INVALID;
 
-    return get_cpu_id(mpidr);
+    extern char __percpu_begin;
+    bool nopcpu = (uintptr_t)&__percpu_begin + get_percpu_offset() == 0;
+
+    if (nopcpu || cached_cpu == CPU_INVALID) {
+        uint64_t mpidr;
+        asm volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
+
+        cpu_t val = get_cpu_id(mpidr);
+        if (nopcpu) {
+            return val;
+        } else {
+            cached_cpu = val;
+        }
+    }
+
+    return cached_cpu;
 }
 
 uint64_t get_mpidr(cpu_t cpu) {

@@ -26,4 +26,6 @@
 
 #define FROM_BE_32(val) SWAP_ORDER_32(val)
 
+#define BITS_TO_U64S(bits) (((bits) + 63) / 64)
+
 #endif

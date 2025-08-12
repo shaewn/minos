@@ -10,7 +10,6 @@ void *kmalloc2(size_t size, int flags) {
     void *ptr = gpa_alloc(&default_allocator, size);
     spin_unlock_irq_restore(&lock);
 
-    // TODO: tlb shootdown
     return ptr;
 }
 

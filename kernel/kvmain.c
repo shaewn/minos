@@ -48,12 +48,14 @@ void kvmain(uintptr_t vbrk) {
     void platform_basic_init(void);
     platform_basic_init();
 
+    set_percpu_start(0);
+
     reserve_active_kernel_memory();
 
     void *percpu_copy = (void *)vbrk;
-    set_percpu_start(percpu_copy);
 
     vbrk = map_percpu(vbrk);
+    set_percpu_start(percpu_copy);
 
     kvmalloc_init();
 

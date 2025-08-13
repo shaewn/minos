@@ -247,7 +247,7 @@ void kvmalloc_init(void) {
 }
 
 void *kvmalloc(size_t pages, int flags) {
-    spin_lock_irq_save(&vmalloc_lock);
+    spin_lock_irq(&vmalloc_lock);
     void *ret;
     if (!(flags & KVMALLOC_PERMANENT)) {
         ret = request_pages(pages);
@@ -256,14 +256,14 @@ void *kvmalloc(size_t pages, int flags) {
         pheap += pages * PAGE_SIZE;
     }
 
-    spin_unlock_irq_restore(&vmalloc_lock);
+    spin_unlock_irq(&vmalloc_lock);
     return ret;
 }
 
 void kvfree(void *ptr) {
-    spin_lock_irq_save(&vmalloc_lock);
+    spin_lock_irq(&vmalloc_lock);
 
     return_pages((uintptr_t) ptr);
 
-    spin_unlock_irq_restore(&vmalloc_lock);
+    spin_unlock_irq(&vmalloc_lock);
 }

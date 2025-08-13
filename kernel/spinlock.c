@@ -11,7 +11,7 @@ void spin_lock_init(volatile spinlock_t *lock) {
     __atomic_store_n(&lock->flag, UNLOCKED, __ATOMIC_RELEASE);
 }
 
-void spin_lock_irq_save(volatile spinlock_t *lock) {
+void spin_lock_irq(volatile spinlock_t *lock) {
     uint8_t expected;
 
     bool masked_val;
@@ -35,7 +35,7 @@ void spin_lock_irq_save(volatile spinlock_t *lock) {
     lock->masked_val = masked_val;
 }
 
-void spin_unlock_irq_restore(volatile spinlock_t *lock) {
+void spin_unlock_irq(volatile spinlock_t *lock) {
     cpu_t holder = lock->holder;
     if (holder != this_cpu()) {
         return;

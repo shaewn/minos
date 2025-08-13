@@ -114,13 +114,13 @@ void establish_global_handler(intid_t intid, interrupt_handler_t handler, handle
     // it would also try to obtain the lock, causing a deadlock.
     int val = irqs_masked();
     mask_irqs();
-    spin_lock_irq_save(&global_handler_lists_lock);
+    spin_lock_irq(&global_handler_lists_lock);
 
     struct list_head *list = get_global_handler_list(intid);
 
     list_add_tail(&ghandler->node, list);
 
-    spin_unlock_irq_restore(&global_handler_lists_lock);
+    spin_unlock_irq(&global_handler_lists_lock);
     restore_irq_mask(val);
 }
 
@@ -130,7 +130,7 @@ void deestablish_global_handler(intid_t intid, handler_id_t identifier) {
 
     int val = irqs_masked();
     mask_irqs();
-    spin_lock_irq_save(&global_handler_lists_lock);
+    spin_lock_irq(&global_handler_lists_lock);
 
     struct list_head *list = get_global_handler_list(intid);
     LIST_FOREACH(list, node) {
@@ -141,7 +141,7 @@ void deestablish_global_handler(intid_t intid, handler_id_t identifier) {
         }
     }
 
-    spin_unlock_irq_restore(&global_handler_lists_lock);
+    spin_unlock_irq(&global_handler_lists_lock);
     restore_irq_mask(val);
 }
 
@@ -153,7 +153,7 @@ void dispatch_irq(intid_t intid) {
             h->ih(intid, h->context);
         }
     } else if (is_global_interrupt(intid)) {
-        spin_lock_irq_save(&global_handler_lists_lock);
+        spin_lock_irq(&global_handler_lists_lock);
 
         struct list_head *list = get_global_handler_list(intid);
 
@@ -162,7 +162,7 @@ void dispatch_irq(intid_t intid) {
             handler->handler(intid, handler->context);
         }
 
-        spin_unlock_irq_restore(&global_handler_lists_lock);
+        spin_unlock_irq(&global_handler_lists_lock);
     }
 }
 

@@ -2,6 +2,7 @@
 #include "interrupts.h"
 #include "kmalloc.h"
 #include "sched.h"
+#include "spinlock.h"
 #include "task.h"
 
 static void sched_sgi_handler(intid_t intid, void *context);
@@ -23,6 +24,7 @@ static void sched_sgi_handler(intid_t intid, void *context) {
     switch (payload->message_type) {
         case SCHED_MESSAGE_NONE:
             do_unpin = false;
+            dec_task = false;
             break;
         case SCHED_MESSAGE_READY_TASK: {
             sched_ready_task_local(payload->task);
@@ -35,7 +37,9 @@ static void sched_sgi_handler(intid_t intid, void *context) {
         }
 
         case SCHED_MESSAGE_BLOCK_TASK: {
-            sched_block_task_local(payload->task, payload->wait_head, payload->wait_head_lock);
+            if (payload->wait_head_lock)
+                sched_block_task_local_on_queue(payload->task, payload->wait_head,
+                                                payload->wait_head_lock);
             break;
         }
     }

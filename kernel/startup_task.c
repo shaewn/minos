@@ -3,27 +3,29 @@
 #include "output.h"
 #include "task.h"
 
-PERCPU_UNINIT uintptr_t __pcpu_cpu_stacks[MAX_CPUS];
-
 void startup_task(void) {
-    print_rdt();
-
-    for (int i = 0; i < 3; i++) {
-        kprint("Running...\nRuntime: %016lx cycles\nVRuntime: %016lx cycles\n", current_task->runtime, current_task->vruntime);
-        sched_yield();
-    }
+    // print_rdt();
 
     struct task *task = clone_current();
 
-    if (task) {
-        kprint("Hello, I'm the parent.\nMy task pointer is %lx\n", current_task);
+    int is_parent = task != NULL;
+
+    if (is_parent) {
+        kprint("Hello, I'm the parent.\n", current_task);
+        status_t status = wait_for_task(task);
+        kprint("Child exited with status %d\n", status);
     } else {
-        kprint("Hello, I'm the child.\nMy task pointer is %lx\n", current_task);
+        kprint("Hello, I'm the child.\n", current_task);
     }
 
-    while (1) {
-        asm volatile("wfi");
+    int counter = 0;
+
+    if (!is_parent) {
+        kprint("Terminating child...\n");
+        task_exit(5);
     }
+
+    task_exit(0);
 }
 
 void create_startup_task(void) {
@@ -33,13 +35,11 @@ void create_startup_task(void) {
     ctdn_latch_set(&the_task->ref_cnt, 0);
 
     the_task->cpu_regs.pc = (uint64_t)startup_task;
-    the_task->user_stack_base = 0;
-    the_task->kernel_stack_base = cpu_stacks[this_cpu()] - KSTACK_SIZE;
 
     cpu_affinity_clear_all(&the_task->affinity);
     cpu_affinity_set(&the_task->affinity, this_cpu());
 
-    the_task->cpu_regs.sp = cpu_stacks[this_cpu()];
+    the_task->cpu_regs.sp = the_task->kernel_stack_base + KSTACK_SIZE;
     // EL1 with SP_EL1
     the_task->cpu_regs.pstate = 0x0000000000000005;
 

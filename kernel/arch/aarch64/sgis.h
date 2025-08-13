@@ -15,7 +15,7 @@ struct sched_sgi_payload {
 
     struct task *task;
     struct list_head *wait_head;
-    spinlock_t *wait_head_lock;
+    volatile spinlock_t *wait_head_lock;
 };
 
 void setup_sgis(void);

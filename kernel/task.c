@@ -1,6 +1,8 @@
 #include "task.h"
+#include "die.h"
 #include "kmalloc.h"
 #include "memory.h"
+#include "output.h"
 #include "pltfrm.h"
 #include "spinlock.h"
 
@@ -11,6 +13,8 @@ struct task *create_task(void) {
     task->preempt_counter = 0;
     task->runtime = 0;
     task->vruntime = get_min_vruntime(); // This can be set to 0.
+    task->user_stack_base = 0;
+    task->kernel_stack_base = (uintptr_t) kmalloc(KSTACK_SIZE);
 
     ctdn_latch_set(&task->ref_cnt, 1);
     task->mm = NULL;
@@ -20,10 +24,17 @@ struct task *create_task(void) {
     list_init(&task->wait_list);
     spin_lock_init(&task->wait_list_lock);
 
+    __atomic_store_n(&task->state, TASK_STATE_NEW_BORN, __ATOMIC_RELEASE);
+
+    __atomic_store_n(&task->exiting, false, __ATOMIC_RELEASE);
+
     return task;
 }
 
-void free_task(struct task *task) { kfree(task); }
+void free_task(struct task *task) {
+    kfree((void *)task->kernel_stack_base);
+    kfree(task);
+}
 
 // Indexed by nice + 20 (to shift from [-20..19] to [0..39])
 static const uint32_t prio_to_weight[40] = {
@@ -33,7 +44,7 @@ static const uint32_t prio_to_weight[40] = {
     110,   87,    70,    56,    45,    36,    29,    23,    18,    15     // 10..19
 };
 
-static void update_runtime_values(struct task *task) {
+static void update_runtime_values(volatile struct task *task) {
     time_t current = timer_get_phys();
 
     time_t delta = current - task->state_begin;
@@ -45,7 +56,10 @@ static void update_runtime_values(struct task *task) {
     task->vruntime += vdelta;
 }
 
-void update_state(struct task *task, task_state_t new_state) {
+// Non-reentrant
+void update_state(volatile struct task *task, task_state_t new_state) {
+    int val = irqs_masked();
+    mask_irqs();
     switch (get_state(task)) {
         case TASK_STATE_RUNNING: {
             update_runtime_values(task);
@@ -58,26 +72,27 @@ void update_state(struct task *task, task_state_t new_state) {
 
     task->state_begin = timer_get_phys();
     __atomic_store_n(&task->state, new_state, __ATOMIC_RELEASE);
+    restore_irq_mask(val);
 }
 
-task_state_t get_state(struct task *task) {
+task_state_t get_state(volatile struct task *task) {
     return __atomic_load_n(&task->state, __ATOMIC_ACQUIRE);
 }
 
-bool task_pin(struct task *task) {
+bool task_pin(volatile struct task *task) {
     if (__atomic_load_n(&task->migrate_lock, __ATOMIC_ACQUIRE) == 0) {
-        __atomic_fetch_add(&task->pin_count, 1, __ATOMIC_RELEASE);
+        __atomic_fetch_add(&task->pin_count, 1, __ATOMIC_RELAXED);
         return true;
     }
 
     return false;
 }
 
-void guarantee_task_pin(struct task *task) {
+void guarantee_task_pin(volatile struct task *task) {
     while (!task_pin(task)) ;
 }
 
-void task_unpin(struct task *task) {
+void task_unpin(volatile struct task *task) {
     __atomic_fetch_sub(&task->pin_count, 1, __ATOMIC_RELEASE);
     cpu_signal_all(&task->pin_count);
 }
@@ -136,14 +151,69 @@ struct task *clone_current(void) {
     return new_task;
 }
 
-void task_exit(status_t status) {
+PERCPU_UNINIT uintptr_t __pcpu_cpu_stacks[MAX_CPUS];
 
+void task_exit(status_t exit_status) {
+    sched_preempt_disable();
+
+    current_task->exit_status = exit_status;
+    __atomic_store_n(&current_task->exiting, true, __ATOMIC_RELEASE);
+
+    sched_preempt_enable();
+
+    sched_unblock_all(&current_task->wait_list, &current_task->wait_list_lock);
+
+    task_ref_dec(current_task);
+    ctdn_latch_wait(&current_task->ref_cnt);
+
+    sched_preempt_disable();
+
+    update_state(current_task, TASK_STATE_TERMINATED);
+
+    mask_irqs();
+    copy_memory((void *) (cpu_stacks[this_cpu()] - KSTACK_SIZE), (void *)current_task->kernel_stack_base, KSTACK_SIZE);
+    swap_stack(current_task->kernel_stack_base, (uintptr_t)cpu_stacks[this_cpu()] - KSTACK_SIZE);
+
+    struct task *the_task = current_task;
+    current_task = NULL;
+    free_task(the_task);
+
+    sched_run(false);
+
+    UNREACHABLE("task_exit");
 }
 
 status_t wait_for_task(struct task *task) {
-    while (get_state(task) != TASK_STATE_TERMINATED) {
-        sched_block_task_local(current_task, &task->wait_list, &task->wait_list_lock);
+    status_t exit_status;
+    bool done = false;
+    while (!done) {
+        volatile spinlock_t *lock = &task->wait_list_lock;
+
+        sched_preempt_disable();
+
+        int val = irqs_masked();
+        mask_irqs();
+        spin_lock_irq(lock);
+
+        bool exiting = __atomic_load_n(&task->exiting, __ATOMIC_ACQUIRE);
+
+        if (exiting) {
+            done = true;
+            exit_status = task->exit_status;
+            spin_unlock_irq(lock);
+
+            task_ref_dec(task);
+        } else {
+            wait_queue_insert(&task->wait_list, current_task);
+            sched_block_task_local_no_switch(current_task);
+
+            spin_unlock_irq(lock);
+            sched_run(true);
+        }
+
+        restore_irq_mask(val);
+        sched_preempt_enable();
     }
 
-    // TODO: Free the task.
+    return exit_status;
 }

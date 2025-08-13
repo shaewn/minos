@@ -265,7 +265,7 @@ int acquire_block(struct buddy_allocator *alloc, uint64_t order, uintptr_t *regi
         KFATAL("region_start must not be NULL\n");
     }
 
-    spin_lock_irq_save(&alloc->lock);
+    spin_lock_irq(&alloc->lock);
 
     struct buddy_data *data_first = BUDDY_ORDER_GET_DATA(buddy_order);
     struct buddy_data *choice = NULL;
@@ -302,7 +302,7 @@ int acquire_block(struct buddy_allocator *alloc, uint64_t order, uintptr_t *regi
         }
     }
 
-    spin_unlock_irq_restore(&alloc->lock);
+    spin_unlock_irq(&alloc->lock);
 
     return retval;
 }
@@ -354,7 +354,7 @@ void release_block(struct buddy_allocator *alloc, uintptr_t region_start) {
 
     struct page *page = HEAP_FIRST_PAGE(heap) + first_page_index;
 
-    spin_lock_irq_save(&alloc->lock);
+    spin_lock_irq(&alloc->lock);
 
     if (!page->allocated) {
         KFATAL("Attempt to free non-allocated page 0x%lx-0x%lx\n", region_start,
@@ -370,7 +370,7 @@ void release_block(struct buddy_allocator *alloc, uintptr_t region_start) {
     trickle_down_range(alloc, order, block_index, block_index + 1, 0);
     release_upward(alloc, order, block_index);
 
-    spin_unlock_irq_restore(&alloc->lock);
+    spin_unlock_irq(&alloc->lock);
 }
 
 uint64_t compute_order(uint64_t pages) {
@@ -471,6 +471,7 @@ void global_release_block(uintptr_t region_start) {
         struct buddy_allocator *a = HEAP_GET_BUDDY(heap);
 
         release_block(a, region_start);
+        return;
     }
 
     KFATAL("Region beginning at 0x%lx does not belong to any existing heap.\n", region_start);

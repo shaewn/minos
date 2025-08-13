@@ -64,7 +64,7 @@ time_t timer_get_phys(void) {
     return val;
 }
 
-#define TIME_SLICE() (timer_gethz())
+#define TIME_SLICE() (timer_gethz() / HZ)
 #define TIMER_INTID() ((intid_t)30)
 
 static PERCPU_UNINIT struct timer_context {
@@ -89,6 +89,7 @@ void no_save_switch_to(struct task *task) {
 
     if (task) {
         regs = &task->cpu_regs;
+        update_state(task, TASK_STATE_RUNNING);
     } else {
         regs = &local_regs;
         regs->sp = min_context.sp;
@@ -99,7 +100,6 @@ void no_save_switch_to(struct task *task) {
     // TODO: Restore fp_regs and extra_regs.
 
     [[noreturn]] void restore_then_eret(uint64_t orig_sp_el1, struct regs *regs);
-    update_state(task, TASK_STATE_RUNNING);
     begin_slice();
     restore_then_eret(min_context.sp, regs);
 }
@@ -116,8 +116,6 @@ void ex_save_context_to(struct task *task) {
 }
 
 static void timer_handle(void) {
-    kprint("Handling...\n");
-
     if (current_task) {
         ex_save_context_to(current_task);
 

@@ -7,4 +7,6 @@
 
 #define KFATAL(...) kfatal(__FILE__, __FUNCTION__, __LINE__, __VA_ARGS__)
 
+#define UNREACHABLE(...) KFATAL(__VA_ARGS__)
+
 #endif

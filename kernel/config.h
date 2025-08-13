@@ -10,4 +10,6 @@
 // 64 KiB
 #define KSTACK_SIZE (2 * PAGE_SIZE)
 
+#define HZ 10
+
 #endif

@@ -12,9 +12,9 @@ static void uart_putchar(char ch) {
 
 void klockout(int locked) {
     if (locked) {
-        spin_lock_irq_save(&output_lock);
+        spin_lock_irq(&output_lock);
     } else {
-        spin_unlock_irq_restore(&output_lock);
+        spin_unlock_irq(&output_lock);
     }
 }
 

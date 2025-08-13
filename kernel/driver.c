@@ -36,9 +36,9 @@ driver_id_t register_private_driver(struct driver *in_driver) {
 
 driver_id_t register_global_driver(struct driver *in_driver) {
     struct driver *driver = dup_driver(in_driver, kmalloc(sizeof(*in_driver)));
-    spin_lock_irq_save(&global_driver_lock);
+    spin_lock_irq(&global_driver_lock);
     list_add_tail(&driver->__node, &global_driver_list);
-    spin_unlock_irq_restore(&global_driver_lock);
+    spin_unlock_irq(&global_driver_lock);
 
     setup_driver(driver);
     return driver->__id;

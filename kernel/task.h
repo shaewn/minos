@@ -34,6 +34,7 @@ struct task {
     // WARNING: Every time you share a struct task * (i.e., give a reference to someone outside of the current context),
     // you MUST increment the reference count. The receiver of the struct task * must later decrement the reference count.
     ctdn_latch_t ref_cnt;
+    bool exiting;
 
     // Not atomic. Only use from hosting cpu.
     uint32_t preempt_counter;
@@ -44,8 +45,6 @@ struct task {
     cpu_t cpu;
     cpu_affinity_t affinity;
 
-    // TODO: These things can survive even after we destroy everything else from the task.
-    // (like Linux's Zombie Processes)
     struct list_head wait_queue_node;
     struct list_head wait_list;
     spinlock_t wait_list_lock;
@@ -64,19 +63,20 @@ struct task {
 
 extern struct task *__pcpu_current_task PERCPU_UNINIT;
 
-// Only creates the task struct, not indirectly stored data.
+#define cpu_stacks GET_PERCPU(__pcpu_cpu_stacks)
+extern PERCPU_UNINIT uintptr_t __pcpu_cpu_stacks[MAX_CPUS];
+
 struct task *create_task(void);
-// Only frees the task struct.
 void free_task(struct task *task);
 
-void update_state(struct task *task, task_state_t new_state);
+void update_state(volatile struct task *task, task_state_t new_state);
 
 // For use by non-hosting cpus.
-task_state_t get_state(struct task *task);
+task_state_t get_state(volatile struct task *task);
 
-bool task_pin(struct task *task);
-void guarantee_task_pin(struct task *task);
-void task_unpin(struct task *task);
+bool task_pin(volatile struct task *task);
+void guarantee_task_pin(volatile struct task *task);
+void task_unpin(volatile struct task *task);
 
 void begin_migration(struct task *task);
 void end_migration(struct task *task);
@@ -85,6 +85,8 @@ void end_migration(struct task *task);
 struct task *clone_current(void);
 
 void task_exit(status_t status);
+
+// consumes a reference.
 status_t wait_for_task(struct task *task);
 
 inline static struct task *task_ref_inc(struct task *task) {

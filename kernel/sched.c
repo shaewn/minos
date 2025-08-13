@@ -9,15 +9,16 @@
 #define min_vruntime GET_PERCPU(__pcpu_min_vruntime)
 
 static PERCPU_UNINIT struct rb_node *__pcpu_run_queue_root;
-static PERCPU_INIT struct list_head __pcpu_blocked_list, __pcpu_suspended_list;
+static PERCPU_INIT struct list_head __pcpu_blocked_list = LIST_HEAD_INIT(__pcpu_blocked_list),
+                                    __pcpu_suspended_list = LIST_HEAD_INIT(__pcpu_suspended_list);
 static PERCPU_UNINIT time_t __pcpu_min_vruntime;
 
-static void wait_queue_insert(struct list_head *wait_head, struct task *task) {
+void wait_queue_insert(struct list_head *wait_head, struct task *task) {
     task_ref_inc(task);
     list_add_tail(&task->wait_queue_node, wait_head);
 }
 
-static void wait_queue_del(struct task *task) {
+void wait_queue_del(struct task *task) {
     task_ref_dec(task);
     list_del(&task->wait_queue_node);
 }
@@ -180,8 +181,10 @@ void sched_run(bool save_state) {
              : NULL;
 
     if (selected != current_task) {
-        if (selected) task_ref_inc(selected);
-        if (current_task) task_ref_dec(current_task);
+        if (selected)
+            task_ref_inc(selected);
+        if (current_task)
+            task_ref_dec(current_task);
     }
 
     if (selected) {
@@ -222,6 +225,8 @@ static void remove_prior(struct task *task) {
 
 void sched_ready_task_local(struct task *task) {
     sched_preempt_disable();
+    int irqs = irqs_masked();
+    mask_irqs();
 
     if (get_state(task) != TASK_STATE_READY) {
         run_queue_insert(task);
@@ -229,11 +234,14 @@ void sched_ready_task_local(struct task *task) {
         update_state(task, TASK_STATE_READY);
     }
 
+    restore_irq_mask(irqs);
     sched_preempt_enable();
 }
 
 void sched_suspend_task_local(struct task *task) {
     sched_preempt_disable();
+    int irqs = irqs_masked();
+    mask_irqs();
 
     if (get_state(task) != TASK_STATE_SUSPENDED) {
         suspend(task);
@@ -245,22 +253,40 @@ void sched_suspend_task_local(struct task *task) {
         sched_run(true);
     }
 
+    restore_irq_mask(irqs);
     sched_preempt_enable();
 }
 
-inline static void maybe_lock(spinlock_t *lk) {
+inline static void maybe_lock(volatile spinlock_t *lk) {
     if (lk)
-        spin_lock_irq_save(lk);
+        spin_lock_irq(lk);
 }
 
-inline static void maybe_unlock(spinlock_t *lk) {
+inline static void maybe_unlock(volatile spinlock_t *lk) {
     if (lk)
-        spin_unlock_irq_restore(lk);
+        spin_unlock_irq(lk);
 }
 
-void sched_block_task_local(struct task *task, struct list_head *wait_head,
-                            spinlock_t *_Nullable lock) {
+void sched_block_task_local_no_switch(struct task *task) {
     sched_preempt_disable();
+    int irqs = irqs_masked();
+    mask_irqs();
+
+    if (get_state(task) != TASK_STATE_BLOCKED) {
+        block(task);
+        remove_prior(task);
+        update_state(task, TASK_STATE_BLOCKED);
+    }
+
+    restore_irq_mask(irqs);
+    sched_preempt_enable();
+}
+
+void sched_block_task_local_on_queue(struct task *task, struct list_head *wait_head,
+                                     volatile spinlock_t *_Nullable lock) {
+    sched_preempt_disable();
+    int irqs = irqs_masked();
+    mask_irqs();
 
     maybe_lock(lock);
 
@@ -278,10 +304,11 @@ void sched_block_task_local(struct task *task, struct list_head *wait_head,
         sched_run(true);
     }
 
+    restore_irq_mask(irqs);
     sched_preempt_enable();
 }
 
-void sched_unblock_one(struct list_head *wait_head, spinlock_t *_Nullable lock) {
+void sched_unblock_one(struct list_head *wait_head, volatile spinlock_t *_Nullable lock) {
     sched_preempt_disable();
 
     struct task *task = NULL;
@@ -303,7 +330,7 @@ void sched_unblock_one(struct list_head *wait_head, spinlock_t *_Nullable lock) 
     sched_preempt_enable();
 }
 
-void sched_unblock_all(struct list_head *wait_head, spinlock_t *_Nullable lock) {
+void sched_unblock_all(struct list_head *wait_head, volatile spinlock_t *_Nullable lock) {
     while (true) {
         // Try to unblock one task; if none left, exit loop
         sched_preempt_disable();
@@ -374,13 +401,14 @@ void sched_suspend_task_remote(struct task *task) {
 }
 
 void sched_block_task_remote(struct task *task, struct list_head *wait_head,
-                             spinlock_t *_Nullable lock) {
+                             volatile spinlock_t *_Nullable lock) {
     sched_preempt_disable();
     guarantee_task_pin(task);
 
     if (task->cpu == this_cpu()) {
 
-        sched_block_task_local(task, wait_head, lock);
+        spin_lock_irq(lock);
+        sched_block_task_local_on_queue(task, wait_head, lock);
         task_unpin(task);
 
     } else {
@@ -415,8 +443,6 @@ void sched_preempt_enable(void) {
         current_task->preempt_counter--;
 }
 
-bool can_preempt(void) {
-    return !current_task || current_task->preempt_counter == 0;
-}
+bool can_preempt(void) { return !current_task || current_task->preempt_counter == 0; }
 
 time_t get_min_vruntime(void) { return min_vruntime; }

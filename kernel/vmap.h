@@ -19,6 +19,8 @@ int vumap(uintptr_t va);
 int vmap_range(uintptr_t start_va, uintptr_t start_pa, size_t pages, uint64_t prot, memory_type_t memory_type, int flags);
 int vumap_range(uintptr_t start_va, size_t pages);
 
+void *ioremap(uintptr_t start_pa, size_t bytes);
+
 uintptr_t get_phys_mapping(uintptr_t va);
 
 void enable_global_tlb_invalidate(void);

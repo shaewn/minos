@@ -8,7 +8,7 @@
 #include "list.h"
 #include "macros.h"
 #include "memory.h"
-#include "output.h"
+#include "kconsole.h"
 #include "spinlock.h"
 
 #define NUM_SPIS (1019 - 32 + 1)

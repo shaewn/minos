@@ -1,29 +1,10 @@
 #include "startup_task.h"
 #include "arch/aarch64/rdt.h"
-#include "output.h"
+#include "kconsole.h"
 #include "task.h"
 
 void startup_task(void) {
-    // print_rdt();
-
-    struct task *task = clone_current();
-
-    int is_parent = task != NULL;
-
-    if (is_parent) {
-        kprint("Hello, I'm the parent.\n", current_task);
-        status_t status = wait_for_task(task);
-        kprint("Child exited with status %d\n", status);
-    } else {
-        kprint("Hello, I'm the child.\n", current_task);
-    }
-
-    int counter = 0;
-
-    if (!is_parent) {
-        kprint("Terminating child...\n");
-        task_exit(5);
-    }
+    print_rdt();
 
     task_exit(0);
 }

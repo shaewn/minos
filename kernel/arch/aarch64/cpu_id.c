@@ -2,7 +2,7 @@
 #include "config.h"
 #include "macros.h"
 #include "../../pltfrm.h"
-#include "output.h"
+#include "kconsole.h"
 
 #define cached_cpu GET_PERCPU(__pcpu_cached_cpu)
 

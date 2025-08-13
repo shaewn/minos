@@ -1,5 +1,5 @@
 #include "memory.h"
-#include "output.h"
+#include "kconsole.h"
 #include "string.h"
 
 #include <stdarg.h>

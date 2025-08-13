@@ -3,7 +3,7 @@
 #include "buddy_util.h"
 #include "die.h"
 #include "macros.h"
-#include "output.h"
+#include "kconsole.h"
 #include "pltfrm.h"
 
 /* physical address range for the memory map */

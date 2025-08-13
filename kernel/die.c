@@ -1,5 +1,5 @@
 #include "die.h"
-#include "output.h"
+#include "kconsole.h"
 
 [[noreturn]] void kfatal(const char *file, const char *function, unsigned line, const char *s, ...) {
     va_list list;

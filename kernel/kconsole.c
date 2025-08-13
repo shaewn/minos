@@ -1,13 +1,44 @@
-#include "output.h"
+#include "kconsole.h"
 
 #include "spinlock.h"
 #include "memory.h"
 #include "pltfrm.h"
+#include "drivers/console.h"
 
 volatile spinlock_t output_lock;
 
-static void uart_putchar(char ch) {
-    *(volatile int *) UART_ADDR = (unsigned int)ch;
+struct buffer_ctx {
+    char buffer[16384];
+    int offset;
+} buffer_ctx;
+
+void buffer_putch(void *ctx, int ch) {
+    struct buffer_ctx *b = ctx;
+    b->buffer[b->offset] = ch;
+    b->offset = (b->offset + 1) % ARRAY_LEN(b->buffer);
+}
+
+int buffer_getch(void *ctx) {
+    return 0;
+}
+
+struct console_driver buffer_driver = {
+    &buffer_ctx,
+    buffer_putch,
+    buffer_getch
+};
+
+struct console_driver *active_console = &buffer_driver;
+
+void kswap_console(struct console_driver *new_console) {
+    if (active_console == &buffer_driver) {
+        // Forward all the output.
+        for (char *s = buffer_ctx.buffer; *s; s++) {
+            new_console->putch(new_console->ctx, *s);
+        }
+    }
+
+    active_console = new_console;
 }
 
 void klockout(int locked) {
@@ -19,7 +50,11 @@ void klockout(int locked) {
 }
 
 void kputch(int ch) {
-    uart_putchar(ch);
+    active_console->putch(active_console->ctx, ch);
+}
+
+int kgetch(void) {
+    return active_console->getch(active_console->ctx);
 }
 
 void kputstr(const char *s) {
@@ -29,7 +64,7 @@ void kputstr(const char *s) {
 }
 
 void kputstr_nolock(const char *s) {
-    while (*s) uart_putchar(*s++);
+    while (*s) kputch(*s++);
 }
 
 void kputu(uintmax_t u, int radix) {

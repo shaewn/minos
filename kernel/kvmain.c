@@ -4,7 +4,7 @@
 #include "memory.h"
 #include "memory_map.h"
 #include "memory_type.h"
-#include "output.h"
+#include "kconsole.h"
 #include "pltfrm.h"
 #include "prot.h"
 #include "types.h"

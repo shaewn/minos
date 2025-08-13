@@ -1,11 +1,15 @@
-#ifndef _KERNEL_OUTPUT_H_
-#define _KERNEL_OUTPUT_H_
+#ifndef _KERNEL_KCONSOLE_H_
+#define _KERNEL_KCONSOLE_H_
 
 #include "types.h"
+#include "drivers/console.h"
+
+void kswap_console(struct console_driver *new_console);
 
 void klockout(int locked);
 
 void kputch(int ch);
+int kgetch(void);
 
 // automatically acquires and releases a spin lock
 void kputstr(const char *s);

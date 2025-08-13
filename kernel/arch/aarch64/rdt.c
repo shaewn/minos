@@ -3,81 +3,85 @@
 #include "fdt.h"
 #include "kmalloc.h"
 #include "memory.h"
-#include "output.h"
+#include "kconsole.h"
 #include "phandle_table.h"
 #include "string.h"
 
 extern struct fdt_header *fdt_header;
 struct rdt_node *rdt_root;
 
+#define MAX_TRAVERSE_DEPTH 10
+
 // recursive device tree
 void build_rdt(void) {
     struct rdt_node *current = NULL;
 
-    const uint32_t *wp = (uint32_t *)((char *)fdt_header + FROM_BE_32(fdt_header->off_dt_struct));
-    const char *strs = (const char *)fdt_header + FROM_BE_32(fdt_header->off_dt_strings);
+    const uint32_t *wp = (uint32_t *)((char *)fdt_header +
+                                      FROM_BE_32(fdt_header->off_dt_struct));
+    const char *strs =
+        (const char *)fdt_header + FROM_BE_32(fdt_header->off_dt_strings);
 
     int nest = 0;
 
     do {
         switch (FROM_BE_32(*wp++)) {
-            case FDT_BEGIN_NODE: {
-                struct rdt_node *new_node = kmalloc(sizeof(*new_node));
-                clear_memory(new_node, sizeof(*new_node));
-                list_init(&new_node->child_list);
-                list_init(&new_node->prop_list);
+        case FDT_BEGIN_NODE: {
+            struct rdt_node *new_node = kmalloc(sizeof(*new_node));
+            clear_memory(new_node, sizeof(*new_node));
+            list_init(&new_node->child_list);
+            list_init(&new_node->prop_list);
 
-                new_node->name = (const char *)wp;
-                new_node->parent = current;
+            new_node->name = (const char *)wp;
+            new_node->parent = current;
 
-                uint32_t advance = (string_len(new_node->name) + 1 + 3) >> 2;
+            uint32_t advance = (string_len(new_node->name) + 1 + 3) >> 2;
 
-                wp += advance;
+            wp += advance;
 
-                if (current) {
-                    list_add_tail(&new_node->node, &current->child_list);
-                } else {
-                    rdt_root = new_node;
-                }
-
-                current = new_node;
-
-                ++nest;
-
-                break;
+            if (current) {
+                list_add_tail(&new_node->node, &current->child_list);
+            } else {
+                rdt_root = new_node;
             }
 
-            case FDT_END_NODE: {
-                --nest;
+            current = new_node;
 
-                current = current->parent;
-                break;
+            ++nest;
+
+            break;
+        }
+
+        case FDT_END_NODE: {
+            --nest;
+
+            current = current->parent;
+            break;
+        }
+
+        case FDT_PROP: {
+            uint32_t len = FROM_BE_32(*wp++);
+            uint32_t nameoff = FROM_BE_32(*wp++);
+
+            struct rdt_prop *prop = kmalloc(sizeof(*prop));
+            prop->data = (const char *)wp;
+            prop->name = strs + nameoff;
+            prop->data_length = len;
+
+            wp += (len + 3) >> 2;
+
+            list_add_tail(&prop->node, &current->prop_list);
+
+            if (string_compare(prop->name, "phandle") == 0) {
+                uint32_t value = FROM_BE_32(*(uint32_t *)prop->data);
+                phandle_table_insert(current, value);
             }
 
-            case FDT_PROP: {
-                uint32_t len = FROM_BE_32(*wp++);
-                uint32_t nameoff = FROM_BE_32(*wp++);
+            break;
+        }
 
-                struct rdt_prop *prop = kmalloc(sizeof(*prop));
-                prop->data = (const char *)wp;
-                prop->name = strs + nameoff;
-                prop->data_length = len;
-
-                wp += (len + 3) >> 2;
-
-                list_add_tail(&prop->node, &current->prop_list);
-
-                if (string_compare(prop->name, "phandle") == 0) {
-                    uint32_t value = FROM_BE_32(*(uint32_t *)prop->data);
-                    phandle_table_insert(current, value);
-                }
-
-                break;
-            }
-
-            case FDT_NOP: {
-                break;
-            }
+        case FDT_NOP: {
+            break;
+        }
         }
     } while (nest);
 }
@@ -236,7 +240,8 @@ void print_phandle(struct rdt_node *node, struct rdt_prop *prop, int depth) {
     kprint("phandle: %u\n", handle);
 }
 
-void print_interrupt_parent(struct rdt_node *node, struct rdt_prop *prop, int depth) {
+void print_interrupt_parent(struct rdt_node *node, struct rdt_prop *prop,
+                            int depth) {
     putspace(depth);
     uint32_t handle = FROM_BE_32(*(uint32_t *)prop->data);
     const char *name = phandle_table_get(handle)->name;
@@ -290,19 +295,36 @@ void print_cell(struct rdt_node *node, struct rdt_prop *prop, int depth) {
 }
 
 void print_special(struct rdt_node *node, struct rdt_prop *prop, int depth) {
-    const char *special_names[] = {"compatible",    "method",           "reg",
-                                   "phandle",       "interrupt-parent", "#address-cells",
-                                   "#size-cells",   "#interrupt-cells", "model",
-                                   "serial-number", "chassis-type",     "bootargs",
-                                   "stdout-path",   "stdin-path",       "enable-method",
-                                   "interrupts",    "migrate",          "cpu_on",
-                                   "cpu_off",       "cpu_suspend"};
+    const char *special_names[] = {
+        "compatible",    "method",           "reg",
+        "phandle",       "interrupt-parent", "#address-cells",
+        "#size-cells",   "#interrupt-cells", "model",
+        "serial-number", "chassis-type",     "bootargs",
+        "stdout-path",   "stdin-path",       "enable-method",
+        "interrupts",    "migrate",          "cpu_on",
+        "cpu_off",       "cpu_suspend"};
 
-    void (*funcs[])(struct rdt_node *node, struct rdt_prop *prop, int depth) = {
-        print_stringlist, print_string, print_reg,    print_phandle, print_interrupt_parent,
-        print_cells,      print_cells,  print_cells,  print_string,  print_string,
-        print_string,     print_string, print_string, print_string,  print_string,
-        print_interrupts, print_cell,   print_cell,   print_cell,    print_cell};
+    void (*funcs[])(struct rdt_node *node, struct rdt_prop *prop,
+                    int depth) = {print_stringlist,
+                                  print_string,
+                                  print_reg,
+                                  print_phandle,
+                                  print_interrupt_parent,
+                                  print_cells,
+                                  print_cells,
+                                  print_cells,
+                                  print_string,
+                                  print_string,
+                                  print_string,
+                                  print_string,
+                                  print_string,
+                                  print_string,
+                                  print_string,
+                                  print_interrupts,
+                                  print_cell,
+                                  print_cell,
+                                  print_cell,
+                                  print_cell};
 
     for (int i = 0; i < ARRAY_LEN(special_names); i++) {
         if (string_compare(special_names[i], prop->name) == 0) {
@@ -332,4 +354,68 @@ static void print_rdt_node(struct rdt_node *root, int depth) {
 }
 
 void print_rdt(void) { print_rdt_node(rdt_root, 1); }
-uint32_t read_cell(struct rdt_prop *prop) { return FROM_BE_32(*(uint32_t *)prop->data); }
+uint32_t read_cell(struct rdt_prop *prop) {
+    return FROM_BE_32(*(uint32_t *)prop->data);
+}
+
+bool rdt_node_compatible(struct rdt_node *node, const char *compat_str) {
+    struct rdt_prop *compatible = rdt_find_prop(node, "compatible");
+    if (!compatible)
+        return false;
+
+    const char *first = compatible->data;
+    size_t offset = 0;
+
+    while (offset < compatible->data_length) {
+        const char *s = first + offset;
+        if (string_compare(s, compat_str) == 0) {
+            return true;
+        }
+
+        offset += string_len(s) + 1;
+    }
+
+    return false;
+}
+
+struct rdt_node *rdt_find_compatible(struct rdt_node *start_node,
+                                 const char *compat_str) {
+    if (!start_node) start_node = rdt_root;
+
+    struct traversal_state {
+        struct rdt_node *node;
+        struct list_head *current_child;
+    };
+
+    struct traversal_state stack[MAX_TRAVERSE_DEPTH];
+    stack[0].node = start_node;
+    stack[0].current_child = NULL;
+
+    int stackind = 0;
+
+    while (stackind >= 0) {
+        struct rdt_node *curr = stack[stackind].node;
+
+        if (!stack[stackind].current_child) {
+            if (rdt_node_compatible(curr, compat_str)) {
+                return curr;
+            }
+
+            stack[stackind].current_child = curr->child_list.next;
+        }
+
+        if (stackind + 1 >= MAX_TRAVERSE_DEPTH || stack[stackind].current_child == &curr->child_list) {
+            // went through all children.
+            --stackind;
+        } else {
+            struct rdt_node *child = CONTAINER_OF(stack[stackind].current_child, struct rdt_node, node);
+            stack[stackind].current_child = stack[stackind].current_child->next;
+
+            ++stackind;
+            stack[stackind].node = child;
+            stack[stackind].current_child = NULL;
+        }
+    }
+
+    return NULL;
+}

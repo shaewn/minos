@@ -1,6 +1,6 @@
 #include "macros.h"
 #include "interrupts.h"
-#include "output.h"
+#include "kconsole.h"
 
 typedef enum {
     EC_UNKNOWN = 0x0,

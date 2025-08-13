@@ -3,7 +3,7 @@
 #include "cpu.h"
 #include "driver.h"
 #include "memory.h"
-#include "output.h"
+#include "kconsole.h"
 #include "sched.h"
 #include "task.h"
 

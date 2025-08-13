@@ -1,12 +1,13 @@
 #include "../../pltfrm.h"
-#include "arch/aarch64/sgis.h"
-#include "sched.h"
 #include "arch/aarch64/cpu_id.h"
+#include "arch/aarch64/sgis.h"
 #include "config.h"
 #include "cpu.h"
 #include "ctdn_latch.h"
 #include "die.h"
 #include "driver.h"
+#include "drivers/pl011_uart.h"
+#include "drivers/console/pl011_uart.h"
 #include "fdt.h"
 #include "gic.h"
 #include "interrupts.h"
@@ -15,11 +16,12 @@
 #include "macros.h"
 #include "memory.h"
 #include "memory_map.h"
-#include "output.h"
+#include "kconsole.h"
 #include "phandle_table.h"
 #include "pltfrm.h"
 #include "prot.h"
 #include "rdt.h"
+#include "sched.h"
 #include "secondary_context.h"
 #include "startup_task.h"
 #include "string.h"
@@ -119,8 +121,8 @@ struct rdt_node *find_primary_interrupt_controller(void) {
     return NULL;
 }
 
-static const uint32_t *read_reg(const uint32_t *wp, uint32_t ac, uint32_t sc, uint64_t *addr,
-                                uint64_t *size) {
+static const uint32_t *read_reg(const uint32_t *wp, uint32_t ac, uint32_t sc,
+                                uint64_t *addr, uint64_t *size) {
     if (ac && addr) {
         *addr = FROM_BE_32(*wp++);
         if (ac == 2) {
@@ -156,7 +158,8 @@ int is_pend_sgi_or_ppi(uint32_t intid) {
     return (mmio_read32(reg) >> bit) & 1;
 }
 
-static void find_parent_ac_sc(struct rdt_node *node, uint32_t *ac, uint32_t *sc) {
+static void find_parent_ac_sc(struct rdt_node *node, uint32_t *ac,
+                              uint32_t *sc) {
     struct rdt_prop *acp = rdt_find_prop(node->parent, "#address-cells");
     struct rdt_prop *scp = rdt_find_prop(node->parent, "#size-cells");
 
@@ -268,7 +271,8 @@ void *percpu_copy(void) {
     extern char __percpu_begin, __percpu_end;
     uintptr_t percpu_begin = (uintptr_t)&__percpu_begin;
     uintptr_t percpu_end = (uintptr_t)&__percpu_end;
-    size_t pages = (percpu_end - percpu_begin + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE - 1);
+    size_t pages =
+        (percpu_end - percpu_begin + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE - 1);
     void *ptr = kvmalloc(pages, KVMALLOC_PERMANENT);
 
     extern uintptr_t map_percpu(uintptr_t base);
@@ -288,7 +292,8 @@ void *alloc_stack(void) {
             KFATAL("Failed to allocate seconary cpu stack.\n");
         }
 
-        r = vmap((uintptr_t)ptr + i * PAGE_SIZE, reg, PROT_RSYS | PROT_WSYS, MEMORY_TYPE_NORMAL, 0);
+        r = vmap((uintptr_t)ptr + i * PAGE_SIZE, reg, PROT_RSYS | PROT_WSYS,
+                 MEMORY_TYPE_NORMAL, 0);
 
         if (r < 0) {
             KFATAL("Failed to map stack memory.\n");
@@ -326,6 +331,8 @@ void bring_up_secondary(void) {
     struct sndry_ctx *ctxs = kmalloc(sizeof(*ctxs) * cpu_count());
 
     uint64_t ttbr0, ttbr1, tcr, mair;
+    // TODO: Get the mode and method from the interface--sometimes smc instead
+    // of hvc, sometimes using spintable instead of psci.
     asm volatile("mrs %0, ttbr0_el1\n"
                  "mrs %1, ttbr1_el1\n"
                  "mrs %2, tcr_el1\n"
@@ -338,11 +345,12 @@ void bring_up_secondary(void) {
     ctdn_latch_set(&startup_latch, cpu_count());
 
     for (cpu_t cpu = 0; cpu < cpu_count(); cpu++) {
-        if (cpu == this_cpu()) continue;
+        if (cpu == this_cpu())
+            continue;
 
         ctxs[cpu].percpu_base = percpu_copy();
         ctxs[cpu].stack = alloc_stack();
-        cpu_stacks[cpu] = (uintptr_t) ctxs[cpu].stack;
+        cpu_stacks[cpu] = (uintptr_t)ctxs[cpu].stack;
         ctxs[cpu].ttbr1 = (void *)ttbr1;
         ctxs[cpu].ttbr0 = (void *)ttbr0;
         ctxs[cpu].tcr = tcr;
@@ -366,9 +374,9 @@ void bring_up_secondary(void) {
                      "mov %[ret], x0"
 
                      : [ret] "=r"(ret)
-                     : [mpidr] "r"(mpidr), [entry_point] "r"(entry_point), [context] "r"(context)
-                     : "x0", "x1", "x2", "x3", "memory"
-        );
+                     : [mpidr] "r"(mpidr), [entry_point] "r"(entry_point),
+                       [context] "r"(context)
+                     : "x0", "x1", "x2", "x3", "memory");
 
         if (ret < 0) {
             kprint("Failed to start cpu %u: %ld\n", cpu, ret);
@@ -381,10 +389,12 @@ void bring_up_secondary(void) {
 
     kfree(ctxs);
 
-    kprint("The primary cpu is %u. We have %u cpus.\n", this_cpu(), cpu_count());
+    kprint("The primary cpu is %u. We have %u cpus.\n", this_cpu(),
+           cpu_count());
 }
 
 void wfi_loop(void);
+
 
 void platform_startup(void) {
     struct fdt_header *header = kvmalloc(1, 0);
@@ -413,12 +423,45 @@ void platform_startup(void) {
     fdt_header = kvmalloc(total_pages, KVMALLOC_PERMANENT);
 
     for (uint32_t i = 0; i < total_pages; i++) {
-        vmap((uintptr_t)fdt_header + i * PAGE_SIZE, (uintptr_t)fdt_header_phys + i * PAGE_SIZE,
-             PROT_RSYS, MEMORY_TYPE_NON_CACHEABLE, 0);
+        vmap((uintptr_t)fdt_header + i * PAGE_SIZE,
+             (uintptr_t)fdt_header_phys + i * PAGE_SIZE, PROT_RSYS,
+             MEMORY_TYPE_NON_CACHEABLE, 0);
     }
 
     build_rdt();
-    // print_rdt();
+
+    struct rdt_node *uart_node = rdt_find_compatible(NULL, "arm,pl011");
+    if (!uart_node) {
+        KFATAL("PL011 UART not found in device tree");
+    }
+
+    struct rdt_prop *uart_reg = rdt_find_prop(uart_node, "reg");
+    uint32_t ac, sc;
+    find_parent_ac_sc(uart_node, &ac, &sc);
+
+    uint64_t addr, size;
+    read_reg(uart_reg->data, ac, sc, &addr, &size);
+
+    kprint("UART addr, size: %lx, %lx\n", addr, size);
+
+    struct pl011_uart *uart = kmalloc(sizeof(*uart));
+    uart->mmio_base = ioremap(addr, size);
+
+    pl011_uart_init(uart);
+
+    struct console_driver *cns = kmalloc(sizeof(*cns));
+    cns->ctx = uart;
+    cns->getch = console_pl011_uart_getch;
+    cns->putch = console_pl011_uart_putch;
+
+    kswap_console(cns);
+
+    print_rdt();
+
+    int ch = kgetch();
+    kprint("Received: %c\n", ch);
+
+    wfi_loop();
 
     setup_interrupts();
     setup_sgis();
@@ -447,4 +490,6 @@ void secondary_main(void *pcpu_start) {
     // timer_start();
 }
 
-void platform_basic_init(void) { asm volatile("msr cpacr_el1, %x0" ::"r"(0x23330000)); }
+void platform_basic_init(void) {
+    asm volatile("msr cpacr_el1, %x0" ::"r"(0x23330000));
+}

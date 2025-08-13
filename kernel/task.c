@@ -2,7 +2,7 @@
 #include "die.h"
 #include "kmalloc.h"
 #include "memory.h"
-#include "output.h"
+#include "kconsole.h"
 #include "pltfrm.h"
 #include "spinlock.h"
 

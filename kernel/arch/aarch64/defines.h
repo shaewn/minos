@@ -20,9 +20,6 @@
 // 8 TiB permanent heap (2^43).
 #define KERNEL_PERMANENT_HEAP_END (KERNEL_PERMANENT_HEAP_BEGIN + 0x80000000000)
 
-#define UART_PHYS_ADDR 0x09000000
-#define UART_ADDR 0xffff400000000000
-
 // 192 gives access to tables via 0xffff600000000000 through 0xffff607fffffffff
 #define RECURSIVE_INDEX 192
 

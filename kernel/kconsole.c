@@ -10,12 +10,17 @@ volatile spinlock_t output_lock;
 struct buffer_ctx {
     char buffer[16384];
     int offset;
+    int full;
 } buffer_ctx;
 
 void buffer_putch(void *ctx, int ch) {
     struct buffer_ctx *b = ctx;
     b->buffer[b->offset] = ch;
-    b->offset = (b->offset + 1) % ARRAY_LEN(b->buffer);
+    b->offset++;
+    if (b->offset >= ARRAY_LEN(b->buffer)) {
+        b->offset = 0;
+        b->full = 1;
+    }
 }
 
 int buffer_getch(void *ctx) {
@@ -28,17 +33,28 @@ struct console_driver buffer_driver = {
     buffer_getch
 };
 
-struct console_driver *active_console = &buffer_driver;
+static struct console_driver *active_console = &buffer_driver;
 
 void kswap_console(struct console_driver *new_console) {
+    klockout(1);
+
     if (active_console == &buffer_driver) {
         // Forward all the output.
-        for (char *s = buffer_ctx.buffer; *s; s++) {
-            new_console->putch(new_console->ctx, *s);
+        struct buffer_ctx *b = active_console->ctx;
+        if (b->full) {
+            for (int i = 0; i < ARRAY_LEN(b->buffer); i++) {
+                new_console->putch(new_console->ctx, b->buffer[(i + b->offset) % ARRAY_LEN(b->buffer)]);
+            }
+        } else {
+            for (int i = 0; i < b->offset; i++) {
+                new_console->putch(new_console->ctx, b->buffer[i]);
+            }
         }
     }
 
     active_console = new_console;
+
+    klockout(0);
 }
 
 void klockout(int locked) {

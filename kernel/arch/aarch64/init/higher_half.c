@@ -117,9 +117,6 @@ void map_higher_half(void) {
         kernel_vbrk_init += PAGE_SIZE;
     }
 
-    get_ind(UART_ADDR, indices);
-    add_page((uint64_t *)root_table, indices, ARRAY_LEN(indices), UART_PHYS_ADDR, MEM_DEV_STRICT_IDX << TTE_MEM_ATTR_IDX_START);
-
     ((uint64_t *)root_table)[RECURSIVE_INDEX] = root_table | TABLE_DESC | AP_TABLE_NO_EL0;
 
     ttbr1_el1_write(root_table);

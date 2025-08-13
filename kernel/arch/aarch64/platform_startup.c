@@ -432,34 +432,33 @@ void platform_startup(void) {
 
     struct rdt_node *uart_node = rdt_find_compatible(NULL, "arm,pl011");
     if (!uart_node) {
-        KFATAL("PL011 UART not found in device tree");
+        kprint("PL011 UART not found in device tree");
+    } else {
+        struct rdt_prop *uart_reg = rdt_find_prop(uart_node, "reg");
+        uint32_t ac, sc;
+        find_parent_ac_sc(uart_node, &ac, &sc);
+
+        uint64_t addr, size;
+        read_reg(uart_reg->data, ac, sc, &addr, &size);
+
+        kprint("UART addr, size: %lx, %lx\n", addr, size);
+        print_rdt();
+
+        struct pl011_uart *uart = kmalloc(sizeof(*uart));
+        uart->mmio_base = ioremap(addr, size);
+
+        pl011_uart_init(uart);
+
+        struct console_driver *cns = kmalloc(sizeof(*cns));
+        cns->ctx = uart;
+        cns->getch = console_pl011_uart_getch;
+        cns->putch = console_pl011_uart_putch;
+
+        kswap_console(cns);
+
+        int ch = kgetch();
+        kprint("Received: %c\n", ch);
     }
-
-    struct rdt_prop *uart_reg = rdt_find_prop(uart_node, "reg");
-    uint32_t ac, sc;
-    find_parent_ac_sc(uart_node, &ac, &sc);
-
-    uint64_t addr, size;
-    read_reg(uart_reg->data, ac, sc, &addr, &size);
-
-    kprint("UART addr, size: %lx, %lx\n", addr, size);
-
-    struct pl011_uart *uart = kmalloc(sizeof(*uart));
-    uart->mmio_base = ioremap(addr, size);
-
-    pl011_uart_init(uart);
-
-    struct console_driver *cns = kmalloc(sizeof(*cns));
-    cns->ctx = uart;
-    cns->getch = console_pl011_uart_getch;
-    cns->putch = console_pl011_uart_putch;
-
-    kswap_console(cns);
-
-    print_rdt();
-
-    int ch = kgetch();
-    kprint("Received: %c\n", ch);
 
     wfi_loop();
 

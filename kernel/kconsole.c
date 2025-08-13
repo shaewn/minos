@@ -42,14 +42,20 @@ void kswap_console(struct console_driver *new_console) {
         // Forward all the output.
         struct buffer_ctx *b = active_console->ctx;
         if (b->full) {
-            for (int i = 0; i < ARRAY_LEN(b->buffer); i++) {
-                new_console->putch(new_console->ctx, b->buffer[(i + b->offset) % ARRAY_LEN(b->buffer)]);
+            for (int i = b->offset; i < ARRAY_LEN(b->buffer); i++) {
+                new_console->putch(new_console->ctx, b->buffer[i]);
+            }
+
+            for (int i = 0; i < b->offset; i++) {
+                new_console->putch(new_console->ctx, b->buffer[i]);
             }
         } else {
             for (int i = 0; i < b->offset; i++) {
                 new_console->putch(new_console->ctx, b->buffer[i]);
             }
         }
+        b->offset = 0;
+        b->full = 0;
     }
 
     active_console = new_console;

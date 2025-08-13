@@ -79,8 +79,6 @@ void create_memory_map(void) {
     struct page *first_page_array = (struct page *)heap_data_end;
     struct page *current_page_item = first_page_array;
 
-    uintptr_t offset = (uintptr_t)first_page_array - (uintptr_t)heap_data_start;
-
     uint64_t heap_index = 0, page_index;
     struct heap_data *cur = heap_data_start;
     while (cur->pages) {

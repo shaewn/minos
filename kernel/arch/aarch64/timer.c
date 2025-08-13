@@ -38,7 +38,7 @@ void timer_set_imask(void) { cntp_ctl_el0_write(cntp_ctl_el0_read() | 2); }
 void timer_clear_imask(void) { cntp_ctl_el0_write(cntp_ctl_el0_read() & ~2ull); }
 
 void timer_set_counter(uint32_t val) {
-    cntp_tval_el0_write(cntp_tval_el0_read() & ~0xffffffffull | val);
+    cntp_tval_el0_write((cntp_tval_el0_read() & ~0xffffffffull) | val);
 }
 
 uint32_t timer_get_counter(void) { return cntp_tval_el0_read() & 0xffffffff; }
@@ -51,12 +51,6 @@ uint32_t timer_gethz(void) {
 
     return cntfrq & 0xffffffff;
 }
-
-static void set_tval(int32_t value) {
-    cntp_tval_el0_write(cntp_tval_el0_read() & ~0xffffffffull | value);
-}
-
-static int32_t get_tval(void) { return (int32_t)cntp_tval_el0_read(); }
 
 time_t timer_get_phys(void) {
     uint64_t val;
@@ -153,8 +147,6 @@ static PERCPU_INIT struct driver __pcpu_timer_driver = {
     "Generic Timer", 1, {30}, NULL, NULL, NULL, timer_on_enable, timer_on_disable, timer_handler};
 
 void timer_start(void) {
-    uint32_t freq_hz = timer_gethz();
-
     timer_driver.context = &timer_ctx;
     enable_driver(register_private_driver(&timer_driver));
 

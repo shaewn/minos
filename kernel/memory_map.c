@@ -69,12 +69,6 @@ void reserve_active_kernel_memory(void) {
     }
 }
 
-void vmap_memory_map(void) {
-    // TODO: This.
-    // I think this function is for secondary cores.
-    uintptr_t pa = (uintptr_t)memory_map_phys_start;
-}
-
 /* pre: a_end != a_start && b_end != b_start */
 int ranges_overlap(uintptr_t a_start, uintptr_t a_end, uintptr_t b_start, uintptr_t b_end) {
     return (a_start < b_end) && (b_start < a_end);
@@ -169,8 +163,6 @@ void trickle_up_allocate_pages(struct buddy_allocator *alloc, uint64_t page_firs
     first_page = heap_first_page + page_first;
     one_past_last_page = heap_first_page + page_past_last;
 
-    uint64_t num_pages = page_past_last - page_first;
-
     for (struct page *page = first_page; page != one_past_last_page; page++) {
         page->allocated = 1;
     }
@@ -213,7 +205,7 @@ void trickle_down_range(struct buddy_allocator *alloc, uint64_t top_order, uint6
     uint64_t num_blocks = block_past_last - block_first;
     uint64_t first_block = block_first;
 
-    uint64_t num_pages, first_page;
+    uint64_t num_pages = num_blocks, first_page = num_blocks;
 
     if (allocating != 0 && allocating != 1) {
         KFATAL("Weird allocating value %d\n", allocating);
@@ -257,8 +249,6 @@ void trickle_down_range(struct buddy_allocator *alloc, uint64_t top_order, uint6
  * [*region_start, *region_end) */
 int acquire_block(struct buddy_allocator *alloc, uint64_t order, uintptr_t *region_start,
                   uintptr_t *region_end) {
-    uint32_t page_size = PAGE_SIZE;
-
     struct buddy_order *buddy_order = alloc->orders + order;
 
     if (!region_start) {
@@ -289,16 +279,15 @@ int acquire_block(struct buddy_allocator *alloc, uint64_t order, uintptr_t *regi
         trickle_up_range_allocate(alloc, order, choice_index, choice_index + 1);
         retval = 0;
 
-        uint64_t page_size = PAGE_SIZE;
         uint64_t first_page = get_first_page(order, choice_index);
         uint64_t num_pages = get_num_pages(order);
 
         struct heap_data *heap = BUDDY_GET_HEAP(alloc);
 
-        *region_start = heap->addr + first_page * page_size;
+        *region_start = heap->addr + first_page * PAGE_SIZE;
 
         if (region_end) {
-            *region_end = *region_start + num_pages * page_size;
+            *region_end = *region_start + num_pages * PAGE_SIZE;
         }
     }
 
@@ -335,21 +324,19 @@ void release_upward(struct buddy_allocator *alloc, uint64_t bottom_order, uint64
 }
 
 void release_block(struct buddy_allocator *alloc, uintptr_t region_start) {
-    uint32_t page_size = PAGE_SIZE;
-
     struct heap_data *heap = BUDDY_GET_HEAP(alloc);
 
     if (region_start < heap->addr) {
         KFATAL("Page 0x%lx-0x%lx does not lie within heap the specified heap\n", region_start,
-               region_start + page_size);
+               region_start + PAGE_SIZE);
     }
 
     uintptr_t heap_offset = region_start - heap->addr;
-    uint64_t first_page_index = heap_offset / page_size;
+    uint64_t first_page_index = heap_offset / PAGE_SIZE;
 
     if (first_page_index >= heap->pages) {
         KFATAL("Page 0x%lx-0x%lx does not lie within heap the specified heap\n", region_start,
-               region_start + page_size);
+               region_start + PAGE_SIZE);
     }
 
     struct page *page = HEAP_FIRST_PAGE(heap) + first_page_index;
@@ -358,12 +345,10 @@ void release_block(struct buddy_allocator *alloc, uintptr_t region_start) {
 
     if (!page->allocated) {
         KFATAL("Attempt to free non-allocated page 0x%lx-0x%lx\n", region_start,
-               region_start + page_size);
+               region_start + PAGE_SIZE);
     }
 
     uint64_t order = page->allocated - 1;
-
-    struct buddy_order *buddy_order = alloc->orders + order;
 
     uint64_t block_index = get_block_index(order, first_page_index);
 

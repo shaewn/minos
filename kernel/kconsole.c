@@ -37,7 +37,6 @@ static struct console_driver *active_console = &buffer_driver;
 
 void kswap_console(struct console_driver *new_console) {
     klockout(1);
-
     if (active_console == &buffer_driver) {
         // Forward all the output.
         struct buffer_ctx *b = active_console->ctx;
@@ -59,7 +58,6 @@ void kswap_console(struct console_driver *new_console) {
     }
 
     active_console = new_console;
-
     klockout(0);
 }
 
@@ -71,27 +69,27 @@ void klockout(int locked) {
     }
 }
 
-void kputch(int ch) {
+void kputch_nolock(int ch) {
     active_console->putch(active_console->ctx, ch);
+}
+
+void kputch(int ch) {
+    klockout(1);
+    kputch_nolock(ch);
+    klockout(0);
 }
 
 int kgetch(void) {
     return active_console->getch(active_console->ctx);
 }
 
+void kputstr_nolock(const char *s) {
+    while (*s) kputch_nolock(*s++);
+}
+
 void kputstr(const char *s) {
     klockout(1);
     kputstr_nolock(s);
-    klockout(0);
-}
-
-void kputstr_nolock(const char *s) {
-    while (*s) kputch(*s++);
-}
-
-void kputu(uintmax_t u, int radix) {
-    klockout(1);
-    kputu_nolock(u, radix);
     klockout(0);
 }
 
@@ -124,7 +122,7 @@ void kputu_nolock(uintmax_t u, int radix) {
     // Should be sufficiently large for any uintmax_t
     char buf[64];
     size_t i;
-    set_memory(buf, 0, sizeof(buf));
+    clear_memory(buf, sizeof(buf));
 
     for (i = 63; u != 0; i--) {
         uint64_t dividend, remainder;
@@ -137,4 +135,10 @@ void kputu_nolock(uintmax_t u, int radix) {
     }
 
     kputstr_nolock(buf + i);
+}
+
+void kputu(uintmax_t u, int radix) {
+    klockout(1);
+    kputu_nolock(u, radix);
+    klockout(0);
 }

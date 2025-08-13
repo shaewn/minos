@@ -11,7 +11,6 @@ void sem_post(volatile sem_t *sem) {
 }
 
 void sem_wait(volatile sem_t *sem) {
-    uint32_t expected;
     while (1) {
         uint32_t val;
         while ((val = __atomic_load_n(sem, __ATOMIC_RELAXED)) == 0)

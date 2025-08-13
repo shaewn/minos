@@ -15,10 +15,6 @@ static void set_block_size(block_header_t *b, size_t size) {
     b->free_block.metadata = size | (b->free_block.metadata & 0xf);
 }
 
-static bool is_allocated(block_header_t *b) {
-    return b->free_block.metadata & 1;
-}
-
 static void set_allocated(block_header_t *b, bool allocated) {
     b->free_block.metadata =
         (b->free_block.metadata & ~0xfULL) | (allocated != 0);

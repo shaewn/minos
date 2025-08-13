@@ -149,6 +149,7 @@ void vma_tree_del(struct rb_node **root, struct vma_node *node) {
         return;
 
     rb_del(&node->rb_node, root);
+    free_node(node);
 }
 
 static void return_pages(uintptr_t address) {

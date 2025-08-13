@@ -2,7 +2,7 @@
 #include "endian.h"
 
 #define KFATAL(...) early_die()
-extern void early_die(void);
+[[noreturn]] extern void early_die(void);
 
 uint32_t *single_or_double_word(uint32_t *ptr, uint32_t selector, uint64_t *dst) {
     switch (selector) {

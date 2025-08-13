@@ -82,7 +82,7 @@ copy_over:;
             to_copy = (size_t)(end - buffer);
         }
 
-        copy_memory(buffer, tmp_buf + i, len);
+        copy_memory(buffer, tmp_buf + i, to_copy);
     }
 
     return len;
@@ -257,6 +257,8 @@ void kprintv_to_buffer(char *buffer, size_t max, const char *format,
 formatted:
     buffer[buffer_pos] = 0;
 }
+
+void kputstr_nolock(const char *s);
 
 void kprintv_nolock(const char *format, va_list list) {
     kprintv_to_buffer(kprint_buffer, KPRINT_BUFFER_SIZE, format, list);

@@ -260,6 +260,9 @@ inline static void get_p_s_cl_cr(struct rb_node *node, struct rb_node **p, struc
     if (*s) {
         *cl = (*s)->left;
         *cr = (*s)->right;
+    } else {
+        *cl = NULL;
+        *cr = NULL;
     }
 }
 

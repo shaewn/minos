@@ -20,8 +20,8 @@
 #define SWAP_ORDER_32(val)                                                                         \
     ({                                                                                             \
         uint32_t data = val;                                                                       \
-        data = (data & 0xffff) << 16 | (data >> 16) & 0xffff;                                      \
-        data = (data & 0x00ff00ff) << 8 | (data >> 8) & 0x00ff00ff;                                \
+        data = (data & 0xffff) << 16 | ((data >> 16) & 0xffff);                                      \
+        data = (data & 0x00ff00ff) << 8 | ((data >> 8) & 0x00ff00ff);                                \
     })
 
 #define FROM_BE_32(val) SWAP_ORDER_32(val)

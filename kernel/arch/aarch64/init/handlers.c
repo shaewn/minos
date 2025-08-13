@@ -38,6 +38,10 @@ void early_ehandler(void) {
     ec = EXTRACT(esr, 31, 26);
     ExceptionClass ex_cls = ec; 
 
+    (void)iss2;
+    (void)il;
+    (void)iss;
+
 #define O(s) case s: str = #s; break;
 
     const char *str;
@@ -67,6 +71,8 @@ void early_ehandler(void) {
 
         default: str = "unhandled exception class"; break;
     }
+
+    (void)str;
 }
 
 /* Utils */

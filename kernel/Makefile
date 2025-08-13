@@ -5,7 +5,7 @@ AS := aarch64-linux-gnu-as
 AFLAGS := -I.
 
 CC := aarch64-linux-gnu-gcc
-CFLAGS := -ffreestanding -I. -O0
+CFLAGS := -ffreestanding -I. -O0 -Wall -Werror
 
 CFLAGS_NO_INIT := -O2
 CFLAGS_INIT := -fno-pic

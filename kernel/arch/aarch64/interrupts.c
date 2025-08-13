@@ -58,11 +58,11 @@ struct handler {
 static PERCPU_UNINIT struct handler __pcpu_private_handlers[NUM_PRIVATE_HANDLERS];
 
 // private per-cpu.
-bool is_private_interrupt(intid_t intid) { return intid < 32 || intid >= 1056 && intid <= 1119; }
+bool is_private_interrupt(intid_t intid) { return intid < 32 || (intid >= 1056 && intid <= 1119); }
 
 // shared across all cpus.
 bool is_global_interrupt(intid_t intid) {
-    return intid >= 32 && intid <= 1019 || intid >= 4096 && intid <= 5119;
+    return (intid >= 32 && intid <= 1019) || (intid >= 4096 && intid <= 5119);
 }
 
 static struct handler *get_private_handler(intid_t intid) {

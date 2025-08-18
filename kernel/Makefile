@@ -1,16 +1,16 @@
-LD := aarch64-linux-gnu-ld
-LD_FLAGS := --sysroot=/usr/aarch64-linux-gnu
+LD := $(minos_ld)
+LD_FLAGS :=
 
-AS := aarch64-linux-gnu-as
+AS := $(minos_as)
 AFLAGS := -I.
 
-CC := aarch64-linux-gnu-gcc
+CC := $(minos_gcc)
 CFLAGS := -ffreestanding -I. -O0 -Wall -Werror
 
 CFLAGS_NO_INIT := -O2
 CFLAGS_INIT := -fno-pic
 
-C_SOURCES := $(shell find -path ./tests -prune -o -path ./arch -prune -o -name "*.c" -print) # include -print so that it doesn't print ./tests (man find(1))
+C_SOURCES := $(shell find . -path ./tests -prune -o -path ./arch -prune -o -name "*.c" -print) # include -print so that it doesn't print ./tests (man find(1))
 ASM_SOURCES := $(shell find arch/aarch64 -name "*.S")
 ASM_OBJECTS := $(patsubst %.s,%.o,$(filter %.s,$(ASM_SOURCES))) $(patsubst %.S,%.o,$(filter %.S,$(ASM_SOURCES)))
 PLTFRM_SOURCES := $(shell find arch/aarch64 -name "*.c")
